@@ -10,7 +10,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char * argv[])
     QApplication guiApp(argc, argv);
 
     GuiPE file;
-    file.Load(R"(C:\Riot Games\League of Legends\Game\League of Legends.exe)");
+    file.Load(R"(C:\Users\FindW\Desktop\Personal Projects\cpp\yo.exe)");
 
     auto * layout = new QVBoxLayout;
     auto * centralWidget = new QWidget;

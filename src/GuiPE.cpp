@@ -10,7 +10,7 @@ QTabWidget * GuiPE::getTabs()
 
 void GuiPE::formatTable(QTableWidget * table)
 {
-    table->setColumnWidth(0, 100);
+    table->setColumnWidth(0, 400);
 
     table->verticalHeader()->setVisible(false);
     table->horizontalHeader()->setSectionsClickable(false);
@@ -46,6 +46,101 @@ unsigned int GuiPE::RvaToOffset(unsigned int rva) {
     return 0;
 }
 
+
+void GuiPE::GUITLS()
+{
+    auto * TlsLayout = new QVBoxLayout();
+
+    formatTable(TlsTable);
+
+    QStringList TlsHeaders;
+    TlsHeaders << "Offset" << "Name" << "Value";
+    TlsTable->setHorizontalHeaderLabels(TlsHeaders);
+
+    DWORD directory_tls_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_TLS].VirtualAddress;
+    int tls_entry_counter = 0;
+    unsigned int offset = RvaToOffset(directory_tls_rva);
+
+    file.seekg(offset, std::ios::beg);
+    file.read(
+            std::bit_cast<char*>(&tls_directory64),
+            sizeof(tls_directory64)
+    );
+
+    TlsTable->setItem(0, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->setItem(0, 1, new QTableWidgetItem("StartAddressOfRawData"));
+    TlsTable->setItem(0, 2, new QTableWidgetItem(QString::number(tls_directory64.StartAddressOfRawData, 16).toUpper()));
+
+    offset += sizeof(tls_directory64.StartAddressOfRawData);
+    TlsTable->setItem(1, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->setItem(1, 1, new QTableWidgetItem("EndAddressOfRawData"));
+    TlsTable->setItem(1, 2, new QTableWidgetItem(QString::number(tls_directory64.EndAddressOfRawData, 16).toUpper()));
+
+    offset += sizeof(tls_directory64.EndAddressOfRawData);
+    TlsTable->setItem(2, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->setItem(2, 1, new QTableWidgetItem("AddressOfIndex"));
+    TlsTable->setItem(2, 2, new QTableWidgetItem(QString::number(tls_directory64.AddressOfIndex, 16).toUpper()));
+
+    offset += sizeof(tls_directory64.AddressOfIndex);
+    TlsTable->setItem(3, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->setItem(3, 1, new QTableWidgetItem("AddressOfCallBacks"));
+    TlsTable->setItem(3, 2, new QTableWidgetItem(QString::number(tls_directory64.AddressOfCallBacks, 16).toUpper()));
+
+    offset += sizeof(tls_directory64.AddressOfCallBacks);
+    TlsTable->setItem(4, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->setItem(4, 1, new QTableWidgetItem("SizeOfZeroFill"));
+    TlsTable->setItem(4, 2, new QTableWidgetItem(QString::number(tls_directory64.SizeOfZeroFill, 16).toUpper()));
+
+    offset += sizeof(tls_directory64.SizeOfZeroFill);
+    TlsTable->setItem(5, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->setItem(5, 1, new QTableWidgetItem("Characteristics"));
+    TlsTable->setItem(5, 2, new QTableWidgetItem(QString::number(tls_directory64.Characteristics, 16).toUpper()));
+
+    formatTable(TlsCallbackTable);
+
+    QStringList TlsCallbackHeaders;
+    TlsCallbackHeaders << "Offset" << "Callback";
+    TlsCallbackTable->setHorizontalHeaderLabels(TlsCallbackHeaders);
+
+    while(true) {
+        unsigned int callback_offset = (tls_entry_counter * sizeof(tls_callback64)) + RvaToOffset(tls_directory64.AddressOfCallBacks - nt_header64.optional_header64.ImageBase);
+        std::cout << std::hex << callback_offset << "\n";
+        file.seekg(callback_offset, std::ios::beg);
+        file.read(
+                std::bit_cast<char*>(&tls_callback64),
+                sizeof(tls_callback64)
+        );
+
+        if(tls_callback64.Callback == 0) {
+            break;
+        }
+        TlsCallbackTable->insertRow(tls_entry_counter);
+        TlsCallbackTable->setItem(tls_entry_counter, 0, new QTableWidgetItem(QString::number(callback_offset, 16).toUpper()));
+        TlsCallbackTable->setItem(tls_entry_counter, 1, new QTableWidgetItem(QString::number(tls_callback64.Callback, 16).toUpper()));
+        tls_entry_counter++;
+    }
+
+    auto * labelFrame = new QFrame();
+    labelFrame->setFrameStyle(QFrame::Box);
+    labelFrame->setStyleSheet("background-color: lightgrey;");
+
+    auto * callbackLabel = new QLabel();
+    callbackLabel->setText("TLS Callbacks [" + QString::number(tls_entry_counter) + " entries]");
+
+    auto * labelLayout = new QHBoxLayout(labelFrame);
+    labelLayout->addWidget(callbackLabel);
+    labelLayout->setContentsMargins(5, 5, 5, 5);
+
+    TlsLayout->addWidget(TlsTable);
+    TlsLayout->addWidget(labelFrame);
+    TlsLayout->addWidget(TlsCallbackTable);
+
+    auto * tlsWidget = new QWidget();
+    tlsWidget->setLayout(TlsLayout);
+
+    PETabs->addTab(tlsWidget, QIcon(R"(C:\Users\FindW\Desktop\folder_icon.jpg)"), "TLS");
+}
+
 void GuiPE::GUIBaseRelocations()
 {
     formatTable(BaseRelocationTable);
@@ -78,6 +173,7 @@ void GuiPE::GUIBaseRelocations()
 
     auto base_relocation_table = new BASE_RELOCATION[base_relocation_directory_count];
     base_relocation_size_counter = 0;
+
     for(int i = 0; i < base_relocation_directory_count; i++) {
         unsigned int offset = base_relocation_size_counter + RvaToOffset(directory_base_relocation_rva);
 
@@ -98,7 +194,7 @@ void GuiPE::GUIBaseRelocations()
         BaseRelocationTable->setItem(i, 3, new QTableWidgetItem(QString::number(entries, 16).toUpper()));
     }
 
-    PETabs->addTab(BaseRelocationTable, "Base Reloc.");
+    PETabs->addTab(BaseRelocationTable, QIcon(R"(C:\Users\FindW\Desktop\folder_icon.jpg)"), "Base Reloc.");
 }
 
 void GuiPE::GUIExceptions()
@@ -133,7 +229,7 @@ void GuiPE::GUIExceptions()
 
         exception_directory_count++;
     }
-    PETabs->addTab(ExceptionsTable, "Exceptions");
+    PETabs->addTab(ExceptionsTable, QIcon(R"(C:\Users\FindW\Desktop\folder_icon.jpg)"), "Exceptions");
 }
 
 void GuiPE::GUIImports()
@@ -207,17 +303,17 @@ void GuiPE::GUIImports()
             bound = "TRUE";
         }
 
-        ImportsTable->setItem(0 + i, 1, new QTableWidgetItem(QString(name)));
-        ImportsTable->setItem(0 + i, 2, new QTableWidgetItem(QString(bound)));
-        ImportsTable->setItem(0 + i, 3, new QTableWidgetItem(QString::number(import_table[i].misc.OriginalFirstThunk, 16).toUpper()));
-        ImportsTable->setItem(0 + i, 4, new QTableWidgetItem(QString::number(import_table[i].TimeDateStamp, 16).toUpper()));
-        ImportsTable->setItem(0 + i, 5, new QTableWidgetItem(QString::number(import_table[i].ForwarderChain, 16).toUpper()));
-        ImportsTable->setItem(0 + i, 6, new QTableWidgetItem(QString::number(import_table[i].Name, 16).toUpper()));
-        ImportsTable->setItem(0 + i, 7, new QTableWidgetItem(QString::number(import_table[i].FirstThunk, 16).toUpper()));
+        ImportsTable->setItem(i, 1, new QTableWidgetItem(QString(name)));
+        ImportsTable->setItem(i, 2, new QTableWidgetItem(QString(bound)));
+        ImportsTable->setItem(i, 3, new QTableWidgetItem(QString::number(import_table[i].misc.OriginalFirstThunk, 16).toUpper()));
+        ImportsTable->setItem(i, 4, new QTableWidgetItem(QString::number(import_table[i].TimeDateStamp, 16).toUpper()));
+        ImportsTable->setItem(i, 5, new QTableWidgetItem(QString::number(import_table[i].ForwarderChain, 16).toUpper()));
+        ImportsTable->setItem(i, 6, new QTableWidgetItem(QString::number(import_table[i].Name, 16).toUpper()));
+        ImportsTable->setItem(i, 7, new QTableWidgetItem(QString::number(import_table[i].FirstThunk, 16).toUpper()));
 
         delete[] name;
     }
-    PETabs->addTab(ImportsTable, "Imports");
+    PETabs->addTab(ImportsTable, QIcon(R"(C:\Users\FindW\Desktop\folder_icon.jpg)"), "Imports");
 }
 
 void GuiPE::GUISections()
@@ -729,6 +825,8 @@ void GuiPE::Load(const std::string& file_path)
     ImportsTable = new QTableWidget(20, 8);
     ExceptionsTable = new QTableWidget(0, 4);
     BaseRelocationTable = new QTableWidget(0, 4);
+    TlsTable = new QTableWidget(6, 3);
+    TlsCallbackTable = new QTableWidget(0, 2);
 
     GUIDosHeader();
     GUINtHeader();
@@ -736,4 +834,5 @@ void GuiPE::Load(const std::string& file_path)
     GUIImports();
     GUIExceptions();
     GUIBaseRelocations();
+    GUITLS();
 }

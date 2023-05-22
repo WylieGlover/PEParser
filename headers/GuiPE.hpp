@@ -10,6 +10,7 @@
 #include "QTableWidgetItem"
 #include "QVBoxLayout"
 #include "QHeaderView"
+#include "QLabel"
 
 class GuiPE
 {
@@ -26,6 +27,8 @@ class GuiPE
         QTableWidget * ImportEntriesTable;
         QTableWidget * ExceptionsTable;
         QTableWidget * BaseRelocationTable;
+        QTableWidget * TlsTable;
+        QTableWidget * TlsCallbackTable;
 
         DOS_HEADER dos_header;
         NTHeader_64 nt_header64;
@@ -37,6 +40,8 @@ class GuiPE
         EXCEPTIONS exceptions;
         BASE_RELOCATION base_relocation;
         BASE_RELOCATION_ENTRY base_relocation_entry;
+        TLS_DIRECTORY64 tls_directory64;
+        TLS_CALLBACK64 tls_callback64;
 
         void GUIDosHeader();
         void GUINtHeader();
@@ -44,6 +49,7 @@ class GuiPE
         void GUIImports();
         void GUIExceptions();
         void GUIBaseRelocations();
+        void GUITLS();
 
         static void formatTable(QTableWidget * table);
         unsigned int RvaToOffset(unsigned int rva);
