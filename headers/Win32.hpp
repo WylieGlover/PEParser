@@ -229,5 +229,4 @@ struct TLS_DIRECTORY64 {
     DWORD   Characteristics;
 };
 
-
 #endif //HEADERS_WIN32_HPP

@@ -3,34 +3,13 @@
 #include <vector>
 #include <string>
 
-
-unsigned int GuiPE::RvaToOffset(unsigned int rva) {
-    for(int i = 0; i < nt_header64.file_header.NumberOfSections; i++) {
-        unsigned int offset = (dos_header.e_lfanew + sizeof(nt_header64)) + (i * sizeof(section_header));
-        file.seekg(offset, std::ios::beg);
-        file.read(
-                std::bit_cast<char*>(&section_header),
-                sizeof(section_header)
-        );
-
-        if(rva >= section_header.VirtualAddress && rva < (section_header.VirtualAddress + section_header.Misc.VirtualSize)) {
-            return (rva - section_header.VirtualAddress) + section_header.PointerToRawData;
-        }
-    }
-    return 0;
-}
-
-QTabWidget* GuiPE::getTabs()
+QTabWidget * GuiPE::getTabs()
 {
     return PETabs;
 }
 
 void GuiPE::formatTable(QTableWidget * table)
 {
-    QStringList headers;
-    headers << "Offset" << "Name" << "Value" << "Value";
-    table->setHorizontalHeaderLabels(headers);
-
     table->setColumnWidth(0, 100);
 
     table->verticalHeader()->setVisible(false);
@@ -50,15 +29,121 @@ void GuiPE::formatTable(QTableWidget * table)
         table->horizontalHeader()->setSectionResizeMode(i, QHeaderView::Stretch);
     }
 }
+
+unsigned int GuiPE::RvaToOffset(unsigned int rva) {
+    for(int i = 0; i < nt_header64.file_header.NumberOfSections; i++) {
+        unsigned int offset = (dos_header.e_lfanew + sizeof(nt_header64)) + (i * sizeof(section_header));
+        file.seekg(offset, std::ios::beg);
+        file.read(
+                std::bit_cast<char*>(&section_header),
+                sizeof(section_header)
+        );
+
+        if(rva >= section_header.VirtualAddress && rva < (section_header.VirtualAddress + section_header.Misc.VirtualSize)) {
+            return (rva - section_header.VirtualAddress) + section_header.PointerToRawData;
+        }
+    }
+    return 0;
+}
+
+void GuiPE::GUIBaseRelocations()
+{
+    formatTable(BaseRelocationTable);
+
+    QStringList headers;
+    headers << "Offset" << "Page RVA" << "Block Size" << "Entries Count";
+    BaseRelocationTable->setHorizontalHeaderLabels(headers);
+
+    DWORD directory_base_relocation_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
+    int base_relocation_directory_count = 0;
+    int base_relocation_size_counter = 0;
+
+    while(true) {
+        unsigned int offset = base_relocation_size_counter + RvaToOffset(directory_base_relocation_rva);
+        file.seekg(offset, std::ios::beg);
+        file.read(
+                std::bit_cast<char*>(&base_relocation),
+                sizeof(base_relocation)
+        );
+
+        if(base_relocation.VirtualAddress == 0x00000000 && base_relocation.SizeOfBlock == 0x00000000) {
+            break;
+        }
+
+        base_relocation_directory_count++;
+        base_relocation_size_counter += (int) base_relocation.SizeOfBlock;
+    }
+
+    BaseRelocationTable->setRowCount(base_relocation_directory_count);
+
+    auto base_relocation_table = new BASE_RELOCATION[base_relocation_directory_count];
+    base_relocation_size_counter = 0;
+    for(int i = 0; i < base_relocation_directory_count; i++) {
+        unsigned int offset = base_relocation_size_counter + RvaToOffset(directory_base_relocation_rva);
+
+        file.seekg(offset, std::ios::beg);
+        file.read(
+                std::bit_cast<char*>(&base_relocation_table[i]),
+                sizeof(base_relocation)
+        );
+        BaseRelocationTable->setItem(i, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+        base_relocation_size_counter += (int) base_relocation_table[i].SizeOfBlock;
+    }
+
+    for(int i = 0; i < base_relocation_directory_count; i++) {
+        unsigned int entries = (base_relocation_table[i].SizeOfBlock - sizeof(base_relocation)) / sizeof(WORD);
+
+        BaseRelocationTable->setItem(i, 1, new QTableWidgetItem(QString::number(base_relocation_table[i].VirtualAddress, 16).toUpper()));
+        BaseRelocationTable->setItem(i, 2, new QTableWidgetItem(QString::number(base_relocation_table[i].SizeOfBlock, 16).toUpper()));
+        BaseRelocationTable->setItem(i, 3, new QTableWidgetItem(QString::number(entries, 16).toUpper()));
+    }
+
+    PETabs->addTab(BaseRelocationTable, "Base Reloc.");
+}
+
+void GuiPE::GUIExceptions()
+{
+    formatTable(ExceptionsTable);
+
+    QStringList headers;
+    headers << "Offset" << "BeginAddress" << "EndAddress" << "UnwindInfoAddress";
+    ExceptionsTable->setHorizontalHeaderLabels(headers);
+
+    DWORD directory_exception_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_EXCEPTION].VirtualAddress;
+    int exception_directory_count = 0;
+
+    while(true) {
+        unsigned int offset = (exception_directory_count * sizeof(EXCEPTIONS)) + RvaToOffset(directory_exception_rva);
+
+        file.seekg(offset, std::ios::beg);
+        file.read(
+                std::bit_cast<char*>(&exceptions),
+                sizeof(exceptions)
+        );
+
+        if(exceptions.BeginAddress == 0 && exceptions.EndAddress == 0 && exceptions.UnwindInfoAddress == 0) {
+            break;
+        }
+
+        ExceptionsTable->insertRow(exception_directory_count);
+        ExceptionsTable->setItem(exception_directory_count, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+        ExceptionsTable->setItem(exception_directory_count, 1, new QTableWidgetItem(QString::number(exceptions.BeginAddress, 16).toUpper()));
+        ExceptionsTable->setItem(exception_directory_count, 2, new QTableWidgetItem(QString::number(exceptions.EndAddress, 16).toUpper()));
+        ExceptionsTable->setItem(exception_directory_count, 3, new QTableWidgetItem(QString::number(exceptions.UnwindInfoAddress, 16).toUpper()));
+
+        exception_directory_count++;
+    }
+    PETabs->addTab(ExceptionsTable, "Exceptions");
+}
+
 void GuiPE::GUIImports()
 {
-
-    formatTable(Imports);
+    formatTable(ImportsTable);
 
     QStringList headers;
     headers << "Offset" << "Name" << "Bound?" << "OriginalFirstThunk" << "TimeDateStamp" << "Forwarder"
             << "Name RVA" << "FirstThunk";
-    Imports->setHorizontalHeaderLabels(headers);
+    ImportsTable->setHorizontalHeaderLabels(headers);
 
     DWORD directory_import_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_IMPORT].VirtualAddress;
     int import_directory_count = 0;
@@ -85,10 +170,10 @@ void GuiPE::GUIImports()
                 std::bit_cast<char*>(&import_table[i]),
                 sizeof(import_descriptor)
         );
-        Imports->setItem(i, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+        ImportsTable->setItem(i, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
     }
 
-    Imports->setRowCount(import_directory_count);
+    ImportsTable->setRowCount(import_directory_count);
     for(int i = 0; i < import_directory_count; i++) {
         unsigned int name_address = RvaToOffset(import_table[i].Name);
         unsigned int name_size = 0;
@@ -111,7 +196,7 @@ void GuiPE::GUIImports()
         file.seekg(name_address, std::ios::beg);
         file.read(
                 name,
-                name_size * sizeof(char) + 1
+                (unsigned int) (name_size * sizeof(char) + 1)
         );
 
         QString bound;
@@ -122,22 +207,21 @@ void GuiPE::GUIImports()
             bound = "TRUE";
         }
 
-        Imports->setItem(0 + i, 1, new QTableWidgetItem(QString(name)));
-        Imports->setItem(0 + i, 2, new QTableWidgetItem(QString(bound)));
-        Imports->setItem(0 + i, 3, new QTableWidgetItem(QString::number(import_table[i].misc.OriginalFirstThunk, 16).toUpper()));
-        Imports->setItem(0 + i, 4, new QTableWidgetItem(QString::number(import_table[i].TimeDateStamp, 16).toUpper()));
-        Imports->setItem(0 + i, 5, new QTableWidgetItem(QString::number(import_table[i].ForwarderChain, 16).toUpper()));
-        Imports->setItem(0 + i, 6, new QTableWidgetItem(QString::number(import_table[i].Name, 16).toUpper()));
-        Imports->setItem(0 + i, 7, new QTableWidgetItem(QString::number(import_table[i].FirstThunk, 16).toUpper()));
+        ImportsTable->setItem(0 + i, 1, new QTableWidgetItem(QString(name)));
+        ImportsTable->setItem(0 + i, 2, new QTableWidgetItem(QString(bound)));
+        ImportsTable->setItem(0 + i, 3, new QTableWidgetItem(QString::number(import_table[i].misc.OriginalFirstThunk, 16).toUpper()));
+        ImportsTable->setItem(0 + i, 4, new QTableWidgetItem(QString::number(import_table[i].TimeDateStamp, 16).toUpper()));
+        ImportsTable->setItem(0 + i, 5, new QTableWidgetItem(QString::number(import_table[i].ForwarderChain, 16).toUpper()));
+        ImportsTable->setItem(0 + i, 6, new QTableWidgetItem(QString::number(import_table[i].Name, 16).toUpper()));
+        ImportsTable->setItem(0 + i, 7, new QTableWidgetItem(QString::number(import_table[i].FirstThunk, 16).toUpper()));
 
         delete[] name;
     }
-    PETabs->addTab(Imports, "Imports");
+    PETabs->addTab(ImportsTable, "Imports");
 }
 
 void GuiPE::GUISections()
 {
-
     formatTable(SectionHeaderTable);
 
     QStringList headers;
@@ -188,6 +272,11 @@ void GuiPE::GUINtHeader()
 
     formatTable(FileHeaderTable);
     formatTable(OptionalHeaderTable);
+
+    QStringList headers;
+    headers << "Offset" << "Name" << "Value" << "Value";
+    FileHeaderTable->setHorizontalHeaderLabels(headers);
+    OptionalHeaderTable->setHorizontalHeaderLabels(headers);
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, file_header.Machine)), std::ios::beg);
     FileHeaderTable->setItem(0, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
@@ -373,13 +462,13 @@ void GuiPE::GUINtHeader()
 
     OptionalHeaderTable->setItem(30, 1, new QTableWidgetItem("Data Directory"));
 
+    auto * AddressHeader = new QTableWidgetItem("Address");
+    auto * SizeHeader = new QTableWidgetItem("Size");
+
     QColor lightBlue(173, 216, 230);
 
-    auto * AddressHeader = new QTableWidgetItem("Address");
     AddressHeader->setBackground(lightBlue);
     OptionalHeaderTable->setItem(30, 2, AddressHeader);
-
-    auto * SizeHeader = new QTableWidgetItem("Size");
     SizeHeader->setBackground(lightBlue);
     OptionalHeaderTable->setItem(30, 3, SizeHeader);
 
@@ -505,6 +594,10 @@ void GuiPE::GUIDosHeader()
     );
 
     formatTable(DosTable);
+
+    QStringList headers;
+    headers << "Offset" << "Name" << "Value";
+    DosTable->setHorizontalHeaderLabels(headers);
 
     file.seekg(0, std::ios::beg);
     DosTable->setItem(0, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
@@ -633,10 +726,14 @@ void GuiPE::Load(const std::string& file_path)
     FileHeaderTable = new QTableWidget(7, 3);
     OptionalHeaderTable = new QTableWidget(45, 4);
     SectionHeaderTable = new QTableWidget(20, 10);
-    Imports = new QTableWidget(20, 8);
+    ImportsTable = new QTableWidget(20, 8);
+    ExceptionsTable = new QTableWidget(0, 4);
+    BaseRelocationTable = new QTableWidget(0, 4);
 
     GUIDosHeader();
     GUINtHeader();
     GUISections();
     GUIImports();
+    GUIExceptions();
+    GUIBaseRelocations();
 }

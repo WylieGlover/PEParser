@@ -22,8 +22,10 @@ class GuiPE
         QTableWidget * FileHeaderTable;
         QTableWidget * OptionalHeaderTable;
         QTableWidget * SectionHeaderTable;
-        QTableWidget * Imports;
-        QTableWidget * ImportEntries;
+        QTableWidget * ImportsTable;
+        QTableWidget * ImportEntriesTable;
+        QTableWidget * ExceptionsTable;
+        QTableWidget * BaseRelocationTable;
 
         DOS_HEADER dos_header;
         NTHeader_64 nt_header64;
@@ -32,15 +34,19 @@ class GuiPE
         IMPORT_DESCRIPTOR * import_table;
         IMPORT_BY_NAME import_name;
         ILT_ENTRY ilt_entry;
+        EXCEPTIONS exceptions;
+        BASE_RELOCATION base_relocation;
+        BASE_RELOCATION_ENTRY base_relocation_entry;
 
         void GUIDosHeader();
         void GUINtHeader();
         void GUISections();
         void GUIImports();
+        void GUIExceptions();
+        void GUIBaseRelocations();
 
         static void formatTable(QTableWidget * table);
         unsigned int RvaToOffset(unsigned int rva);
-        void EntryNameClicked(QTableWidgetItem * item);
 
     public:
         void Load(const std::string &path);
