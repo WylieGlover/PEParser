@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <algorithm>
 
 #include "Win32.hpp"
 

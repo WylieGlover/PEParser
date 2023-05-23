@@ -2,6 +2,7 @@
 #include <bit>
 #include <vector>
 #include <string>
+#include <QtConcurrent/QtConcurrent>
 
 #include "headers/GuiPE.hpp"
 
@@ -12,38 +13,48 @@ QTabWidget * GuiPE::getTabs()
 
 void GuiPE::updateHexViewer(int hex_offset)
 {
-    if(!hexViewer) return;
+    if (!hexViewer) return;
 
-    file.seekg(hex_offset, std::ios::beg);
+    const int numRows = hexViewer->rowCount();
+    const int numCols = hexViewer->columnCount();
 
-    char byte;
-    int startingOffset = hex_offset;
+    // Clear the hexViewer
+    hexViewer->clearContents();
 
-    for (int row = 0; row < hexViewer->rowCount(); ++row) {
-        int offset = startingOffset + (row * 16);
+    // Set the vertical headers
+    for (int row = 0; row < numRows; ++row) {
+        int offset = hex_offset + (row * 16);
         hexViewer->setVerticalHeaderItem(row, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    }
 
-        for (int col = 0; col < 16; ++col) {
+    // Seek to the desired offset in the file
+    file.seekg(hex_offset);
+
+    // Read and update the hexViewer cell by cell
+    for (int row = 0; row < numRows; ++row) {
+        for (int col = 0; col < numCols; ++col) {
+            char byte;
             file.read(&byte, sizeof(byte));
 
             if (file.eof()) {
+                // End of file reached, break the loop
                 break;
             }
+
             QString hexValue = QString::number(static_cast<unsigned char>(byte), 16).toUpper();
 
             if (hexValue.length() == 1) {
                 hexValue = "0" + hexValue;
             }
 
-            auto * byteItem = new QTableWidgetItem(hexValue);
+            auto* byteItem = new QTableWidgetItem(hexValue);
             byteItem->setTextAlignment(Qt::AlignCenter);
+
             hexViewer->setItem(row, col, byteItem);
-        }
-        if (file.eof()) {
-            break;
         }
     }
 }
+
 
 void GuiPE::connectTablesToHexViewer() const
 {
