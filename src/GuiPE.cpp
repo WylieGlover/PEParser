@@ -55,7 +55,6 @@ void GuiPE::updateHexViewer(int hex_offset)
     }
 }
 
-
 void GuiPE::connectTablesToHexViewer() const
 {
     if(DosTable)
@@ -364,6 +363,7 @@ void GuiPE::GUIExceptions()
 
 void GuiPE::GUIImports()
 {
+    auto * ImportsLayout = new QVBoxLayout();
     formatTable(ImportsTable);
 
     QStringList headers;
@@ -375,44 +375,35 @@ void GuiPE::GUIImports()
     DWORD directory_import_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_IMPORT].VirtualAddress;
     int import_directory_count = 0;
 
-    while(true) {
+    while (true) {
         unsigned int offset = (import_directory_count * sizeof(IMPORT_DESCRIPTOR)) + RvaToOffset(directory_import_rva);
         file.seekg(offset, std::ios::beg);
-        file.read(
-                std::bit_cast<char*>(&import_descriptor),
-                sizeof(import_descriptor)
-        );
+        file.read(std::bit_cast<char*>(&import_descriptor), sizeof(import_descriptor));
 
-        if(import_descriptor.Name == 0x00000000 && import_descriptor.FirstThunk == 0x00000000) {
+        if (import_descriptor.Name == 0x00000000 && import_descriptor.FirstThunk == 0x00000000) {
             break;
         }
         import_directory_count++;
     }
 
     import_table = new IMPORT_DESCRIPTOR[import_directory_count];
-    for(int i = 0; i < import_directory_count; i++) {
+    for (int i = 0; i < import_directory_count; i++) {
         unsigned int offset = (i * sizeof(import_descriptor)) + RvaToOffset(directory_import_rva);
         file.seekg(offset, std::ios::beg);
-        file.read(
-                std::bit_cast<char*>(&import_table[i]),
-                sizeof(import_descriptor)
-        );
+        file.read(std::bit_cast<char*>(&import_table[i]), sizeof(import_descriptor));
         ImportsTable->setItem(i, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
         ImportsTable->item(i, 0)->setForeground(QColor(0, 0, 255));
     }
 
     ImportsTable->setRowCount(import_directory_count);
-    for(int i = 0; i < import_directory_count; i++) {
+    for (int i = 0; i < import_directory_count; i++) {
         unsigned int name_address = RvaToOffset(import_table[i].Name);
         unsigned int name_size = 0;
 
         while (true) {
             char temp;
             file.seekg((name_address + name_size), std::ios::beg);
-            file.read(
-                    &temp,
-                    sizeof(char)
-            );
+            file.read(&temp, sizeof(char));
 
             if (temp == 0x00) {
                 break;
@@ -420,18 +411,15 @@ void GuiPE::GUIImports()
             name_size++;
         }
 
-        char *name = new char[name_size + 2];
+        char* name = new char[name_size + 2];
         file.seekg(name_address, std::ios::beg);
-        file.read(
-                name,
-                (unsigned int) (name_size * sizeof(char) + 1)
-        );
+        file.read(name, (unsigned int)(name_size * sizeof(char) + 1));
 
         QString bound;
         if (import_table[i].TimeDateStamp == 0) {
-
             bound = "FALSE";
-        } else {
+        }
+        else {
             bound = "TRUE";
         }
 
@@ -442,10 +430,86 @@ void GuiPE::GUIImports()
         ImportsTable->setItem(i, 5, new QTableWidgetItem(QString::number(import_table[i].ForwarderChain, 16).toUpper()));
         ImportsTable->setItem(i, 6, new QTableWidgetItem(QString::number(import_table[i].Name, 16).toUpper()));
         ImportsTable->setItem(i, 7, new QTableWidgetItem(QString::number(import_table[i].FirstThunk, 16).toUpper()));
-
-        delete[] name;
     }
-    PETabs->addTab(ImportsTable, QIcon(R"(C:\Users\FindW\Desktop\folder_icon.jpg)"), "Imports");
+
+    formatTable(ImportEntriesTable);
+
+    QStringList entryHeaders;
+    entryHeaders << "Entry" << "Name" << "Hint";
+    ImportEntriesTable->setHorizontalHeaderLabels(entryHeaders);
+    ImportEntriesTable->verticalHeader()->setVisible(false);
+
+    entriesCountLabel = new QLabel;
+    entriesCountLabel->setAlignment(Qt::AlignCenter);
+    QString entriesLabel = "Entries: " + QString::number(entry_counter);
+    entriesCountLabel->setText(entriesLabel);
+
+    auto * layout = new QVBoxLayout;
+    layout->addWidget(ImportsTable);
+    layout->addWidget(entriesCountLabel);
+    layout->addWidget(ImportEntriesTable);
+
+    auto * tabWidget = new QWidget;
+    tabWidget->setLayout(layout);
+
+    connect(ImportsTable, &QTableWidget::cellClicked, this, &GuiPE::handleImportSelection);
+
+    PETabs->addTab(tabWidget, "Imports");
+}
+
+void GuiPE::handleImportSelection()
+{
+    int selectedRow = ImportsTable->currentRow();
+
+    ImportEntriesTable->clearContents();
+    ImportEntriesTable->setRowCount(0);
+
+    if (selectedRow >= 0 && selectedRow < ImportsTable->rowCount()) {
+        unsigned int ilt_address = RvaToOffset(import_table[selectedRow].misc.OriginalFirstThunk);
+        entry_counter = 0;
+
+        while (true) {
+            file.seekg((unsigned int)(ilt_address + (entry_counter * sizeof(QWORD))), std::ios::beg);
+            file.read(std::bit_cast<char*>(&ilt_entry), sizeof(ilt_entry));
+
+            BYTE flag = ilt_entry.OrdinalNameFlag;
+            DWORD hint_rva = 0x0;
+            WORD ordinal = 0x0;
+
+            if (flag == 0x0) {
+                hint_rva = ilt_entry.misc.HintNameTable;
+            }
+            else if (flag == 0x01) {
+                ordinal = ilt_entry.misc.HintNameTable;
+            }
+
+            if (flag == 0x0 && hint_rva == 0x0 && ordinal == 0x0) {
+                break;
+            }
+
+            if (flag == 0x0) {
+                DWORD hint_address = RvaToOffset(hint_rva);
+                file.seekg(hint_address, std::ios::beg);
+                file.read(std::bit_cast<char*>(&import_name), sizeof(import_name));
+
+                int rowCount = ImportEntriesTable->rowCount();
+                ImportEntriesTable->insertRow(rowCount);
+                ImportEntriesTable->setItem(rowCount, 0, new QTableWidgetItem(QString::number(entry_counter + 1)));
+                ImportEntriesTable->setItem(rowCount, 1, new QTableWidgetItem(QString(import_name.Name)));
+                ImportEntriesTable->setItem(rowCount, 2, new QTableWidgetItem(QString::number(import_name.Hint, 16).toUpper()));
+            }
+            else if (flag == 1) {
+                int rowCount = ImportEntriesTable->rowCount();
+                ImportEntriesTable->insertRow(rowCount);
+                ImportEntriesTable->setItem(rowCount, 0, new QTableWidgetItem(QString::number(entry_counter + 1)));
+                ImportEntriesTable->setItem(rowCount, 1, new QTableWidgetItem(QString::number(ordinal, 16).toUpper()));
+                ImportEntriesTable->setItem(rowCount, 2, new QTableWidgetItem(""));
+            }
+            entry_counter++;
+        }
+        QString entriesLabel = "Entries: " + QString::number(entry_counter);
+        entriesCountLabel->setText(entriesLabel);
+    }
 }
 
 void GuiPE::GUISections()
@@ -1043,6 +1107,7 @@ void GuiPE::Load(const std::string& file_path)
     OptionalHeaderTable = new QTableWidget(45, 4);
     SectionHeaderTable = new QTableWidget(20, 10);
     ImportsTable = new QTableWidget(20, 8);
+    ImportEntriesTable = new QTableWidget(5, 3);
     ExceptionsTable = new QTableWidget(0, 4);
     BaseRelocationTable = new QTableWidget(0, 4);
     TlsTable = new QTableWidget(6, 3);

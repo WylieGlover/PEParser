@@ -12,6 +12,7 @@
 #include "QVBoxLayout"
 #include "QHeaderView"
 #include "QLabel"
+#include "QSplitter"
 
 class GuiPE : public QObject
 {
@@ -33,6 +34,8 @@ class GuiPE : public QObject
         QTableWidget * TlsTable;
         QTableWidget * TlsCallbackTable;
 
+        QLabel* entriesCountLabel;
+
         DOS_HEADER dos_header;
         NTHeader_64 nt_header64;
         SECTION_HEADER section_header;
@@ -45,6 +48,8 @@ class GuiPE : public QObject
         BASE_RELOCATION_ENTRY base_relocation_entry;
         TLS_DIRECTORY64 tls_directory64;
         TLS_CALLBACK64 tls_callback64;
+
+        int entry_counter = 0;
 
         void GUIDosHeader();
         void GUINtHeader();
@@ -60,6 +65,7 @@ class GuiPE : public QObject
         void connectTablesToHexViewer() const;
         void onOffsetCellClicked(int row, int column);
         void updateHexViewer(int offset);
+        void handleImportSelection();
     public:
         void Load(const std::string &path);
         void createHexByteViewer(QWidget * parent, const std::string& filePath, int numLines, int offset);
