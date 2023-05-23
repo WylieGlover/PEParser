@@ -13,5 +13,7 @@ set(CMAKE_AUTOUIC ON)
 set(AUTOGEN_BUILD_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(${PROJECT_NAME}
-        src/main.cpp)
-target_link_libraries(PeParser64 Qt6::Widgets)
+        src/main.cpp
+        src/GuiPE.cpp
+        headers/GuiPE.hpp)
+target_link_libraries(PeParser64 Qt6::Core Qt6::Widgets)

@@ -3,16 +3,88 @@
 #include <vector>
 #include <string>
 
+#include "headers/GuiPE.hpp"
+
 QTabWidget * GuiPE::getTabs()
 {
     return PETabs;
 }
 
-void GuiPE::formatTable(QTableWidget * table)
+void GuiPE::updateHexViewer(int hex_offset)
 {
-    table->setColumnWidth(0, 400);
+    if(!hexViewer) return;
 
-    table->verticalHeader()->setVisible(false);
+    file.seekg(hex_offset, std::ios::beg);
+
+    char byte;
+    int startingOffset = hex_offset;
+
+    for (int row = 0; row < hexViewer->rowCount(); ++row) {
+        int offset = startingOffset + (row * 16);
+        hexViewer->setVerticalHeaderItem(row, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+
+        for (int col = 0; col < 16; ++col) {
+            file.read(&byte, sizeof(byte));
+
+            if (file.eof()) {
+                break;
+            }
+            QString hexValue = QString::number(static_cast<unsigned char>(byte), 16).toUpper();
+
+            if (hexValue.length() == 1) {
+                hexValue = "0" + hexValue;
+            }
+
+            auto * byteItem = new QTableWidgetItem(hexValue);
+            byteItem->setTextAlignment(Qt::AlignCenter);
+            hexViewer->setItem(row, col, byteItem);
+        }
+        if (file.eof()) {
+            break;
+        }
+    }
+}
+
+void GuiPE::connectTablesToHexViewer() const
+{
+    if(DosTable)
+        connect(DosTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    if(FileHeaderTable)
+        connect(FileHeaderTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    if(OptionalHeaderTable)
+        connect(OptionalHeaderTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    if(ImportsTable)
+        connect(ImportsTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    if(ExceptionsTable)
+        connect(ExceptionsTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    if(BaseRelocationTable)
+        connect(BaseRelocationTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    if(TlsTable)
+        connect(TlsTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    if(TlsCallbackTable)
+        connect(TlsCallbackTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+}
+
+void GuiPE::onOffsetCellClicked(int row, int column)
+{
+    if (column == 0) {
+        bool ok;
+        auto * senderTable = qobject_cast<QTableWidget*>(sender());
+        if (senderTable) {
+            QTableWidgetItem *item = senderTable->item(row, column);
+            if(item) {
+                int offset = item->text().toInt(&ok, 16);
+                if (ok)
+                    updateHexViewer(offset);
+            }
+        }
+    }
+}
+
+void GuiPE::formatTable(QTableWidget* table)
+{
+    table->setColumnWidth(0, 100);
+
     table->horizontalHeader()->setSectionsClickable(false);
     table->verticalHeader()->setSectionsClickable(false);
     table->setShowGrid(false);
@@ -22,15 +94,51 @@ void GuiPE::formatTable(QTableWidget * table)
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->setSelectionMode(QAbstractItemView::NoSelection);
-    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
 
-    for(int i = 1; i < table->horizontalHeader()->count(); i++)
-    {
-        table->horizontalHeader()->setSectionResizeMode(i, QHeaderView::Stretch);
-    }
+    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
+
+    table->horizontalHeader()->setSectionResizeMode(table->horizontalHeader()->count() - 1, QHeaderView::Stretch);
 }
 
-unsigned int GuiPE::RvaToOffset(unsigned int rva) {
+void formatHexTable(QTableWidget* table)
+{
+    table->horizontalHeader()->setSectionsClickable(false);
+    table->verticalHeader()->setSectionsClickable(false);
+    table->setShowGrid(false);
+
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+
+    table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+}
+
+void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, int numLines, int hex_offset)
+{
+    if(!hexViewer)
+    {
+        hexViewer = new QTableWidget(parent);
+        formatHexTable(hexViewer);
+        hexViewer->setStyleSheet("QTableView { padding: 0; spacing: 0; }");
+
+        QFont font;
+        font.setPointSize(8);
+
+        hexViewer->setFont(font);
+        hexViewer->setRowCount(numLines);
+        hexViewer->setColumnCount(16);
+
+        QStringList offsetHeaders;
+        offsetHeaders << "0" << "1" << "2" << "3" << "4" << "5" << "6" << "7" << "8" << "9" << "A" << "B" << "C" << "D" << "E" << "F";
+        hexViewer->setHorizontalHeaderLabels(offsetHeaders);
+    }
+
+    updateHexViewer(hex_offset);
+}
+
+unsigned int GuiPE::RvaToOffset(unsigned int rva)
+{
     for(int i = 0; i < nt_header64.file_header.NumberOfSections; i++) {
         unsigned int offset = (dos_header.e_lfanew + sizeof(nt_header64)) + (i * sizeof(section_header));
         file.seekg(offset, std::ios::beg);
@@ -46,7 +154,6 @@ unsigned int GuiPE::RvaToOffset(unsigned int rva) {
     return 0;
 }
 
-
 void GuiPE::GUITLS()
 {
     auto * TlsLayout = new QVBoxLayout();
@@ -56,6 +163,7 @@ void GuiPE::GUITLS()
     QStringList TlsHeaders;
     TlsHeaders << "Offset" << "Name" << "Value";
     TlsTable->setHorizontalHeaderLabels(TlsHeaders);
+    TlsTable->verticalHeader()->setVisible(false);
 
     DWORD directory_tls_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_TLS].VirtualAddress;
     int tls_entry_counter = 0;
@@ -68,31 +176,37 @@ void GuiPE::GUITLS()
     );
 
     TlsTable->setItem(0, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->item(0, 0)->setForeground(QColor(0, 0, 255));
     TlsTable->setItem(0, 1, new QTableWidgetItem("StartAddressOfRawData"));
     TlsTable->setItem(0, 2, new QTableWidgetItem(QString::number(tls_directory64.StartAddressOfRawData, 16).toUpper()));
 
     offset += sizeof(tls_directory64.StartAddressOfRawData);
     TlsTable->setItem(1, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->item(1, 0)->setForeground(QColor(0, 0, 255));
     TlsTable->setItem(1, 1, new QTableWidgetItem("EndAddressOfRawData"));
     TlsTable->setItem(1, 2, new QTableWidgetItem(QString::number(tls_directory64.EndAddressOfRawData, 16).toUpper()));
 
     offset += sizeof(tls_directory64.EndAddressOfRawData);
     TlsTable->setItem(2, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->item(2, 0)->setForeground(QColor(0, 0, 255));
     TlsTable->setItem(2, 1, new QTableWidgetItem("AddressOfIndex"));
     TlsTable->setItem(2, 2, new QTableWidgetItem(QString::number(tls_directory64.AddressOfIndex, 16).toUpper()));
 
     offset += sizeof(tls_directory64.AddressOfIndex);
     TlsTable->setItem(3, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->item(3, 0)->setForeground(QColor(0, 0, 255));
     TlsTable->setItem(3, 1, new QTableWidgetItem("AddressOfCallBacks"));
     TlsTable->setItem(3, 2, new QTableWidgetItem(QString::number(tls_directory64.AddressOfCallBacks, 16).toUpper()));
 
     offset += sizeof(tls_directory64.AddressOfCallBacks);
     TlsTable->setItem(4, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->item(4, 0)->setForeground(QColor(0, 0, 255));
     TlsTable->setItem(4, 1, new QTableWidgetItem("SizeOfZeroFill"));
     TlsTable->setItem(4, 2, new QTableWidgetItem(QString::number(tls_directory64.SizeOfZeroFill, 16).toUpper()));
 
     offset += sizeof(tls_directory64.SizeOfZeroFill);
     TlsTable->setItem(5, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    TlsTable->item(5, 0)->setForeground(QColor(0, 0, 255));
     TlsTable->setItem(5, 1, new QTableWidgetItem("Characteristics"));
     TlsTable->setItem(5, 2, new QTableWidgetItem(QString::number(tls_directory64.Characteristics, 16).toUpper()));
 
@@ -101,10 +215,10 @@ void GuiPE::GUITLS()
     QStringList TlsCallbackHeaders;
     TlsCallbackHeaders << "Offset" << "Callback";
     TlsCallbackTable->setHorizontalHeaderLabels(TlsCallbackHeaders);
+    TlsCallbackTable->verticalHeader()->setVisible(false);
 
     while(true) {
         unsigned int callback_offset = (tls_entry_counter * sizeof(tls_callback64)) + RvaToOffset(tls_directory64.AddressOfCallBacks - nt_header64.optional_header64.ImageBase);
-        std::cout << std::hex << callback_offset << "\n";
         file.seekg(callback_offset, std::ios::beg);
         file.read(
                 std::bit_cast<char*>(&tls_callback64),
@@ -116,6 +230,7 @@ void GuiPE::GUITLS()
         }
         TlsCallbackTable->insertRow(tls_entry_counter);
         TlsCallbackTable->setItem(tls_entry_counter, 0, new QTableWidgetItem(QString::number(callback_offset, 16).toUpper()));
+        TlsCallbackTable->item(tls_entry_counter, 0)->setForeground(QColor(0, 0, 255));
         TlsCallbackTable->setItem(tls_entry_counter, 1, new QTableWidgetItem(QString::number(tls_callback64.Callback, 16).toUpper()));
         tls_entry_counter++;
     }
@@ -148,6 +263,7 @@ void GuiPE::GUIBaseRelocations()
     QStringList headers;
     headers << "Offset" << "Page RVA" << "Block Size" << "Entries Count";
     BaseRelocationTable->setHorizontalHeaderLabels(headers);
+    BaseRelocationTable->verticalHeader()->setVisible(false);
 
     DWORD directory_base_relocation_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
     int base_relocation_directory_count = 0;
@@ -183,6 +299,7 @@ void GuiPE::GUIBaseRelocations()
                 sizeof(base_relocation)
         );
         BaseRelocationTable->setItem(i, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+        BaseRelocationTable->item(i, 0)->setForeground(QColor(0, 0, 255));
         base_relocation_size_counter += (int) base_relocation_table[i].SizeOfBlock;
     }
 
@@ -204,6 +321,7 @@ void GuiPE::GUIExceptions()
     QStringList headers;
     headers << "Offset" << "BeginAddress" << "EndAddress" << "UnwindInfoAddress";
     ExceptionsTable->setHorizontalHeaderLabels(headers);
+    ExceptionsTable->verticalHeader()->setVisible(false);
 
     DWORD directory_exception_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_EXCEPTION].VirtualAddress;
     int exception_directory_count = 0;
@@ -223,6 +341,7 @@ void GuiPE::GUIExceptions()
 
         ExceptionsTable->insertRow(exception_directory_count);
         ExceptionsTable->setItem(exception_directory_count, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+        ExceptionsTable->item(exception_directory_count, 0)->setForeground(QColor(0, 0, 255));
         ExceptionsTable->setItem(exception_directory_count, 1, new QTableWidgetItem(QString::number(exceptions.BeginAddress, 16).toUpper()));
         ExceptionsTable->setItem(exception_directory_count, 2, new QTableWidgetItem(QString::number(exceptions.EndAddress, 16).toUpper()));
         ExceptionsTable->setItem(exception_directory_count, 3, new QTableWidgetItem(QString::number(exceptions.UnwindInfoAddress, 16).toUpper()));
@@ -240,6 +359,7 @@ void GuiPE::GUIImports()
     headers << "Offset" << "Name" << "Bound?" << "OriginalFirstThunk" << "TimeDateStamp" << "Forwarder"
             << "Name RVA" << "FirstThunk";
     ImportsTable->setHorizontalHeaderLabels(headers);
+    ImportsTable->verticalHeader()->setVisible(false);
 
     DWORD directory_import_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_IMPORT].VirtualAddress;
     int import_directory_count = 0;
@@ -267,6 +387,7 @@ void GuiPE::GUIImports()
                 sizeof(import_descriptor)
         );
         ImportsTable->setItem(i, 0, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+        ImportsTable->item(i, 0)->setForeground(QColor(0, 0, 255));
     }
 
     ImportsTable->setRowCount(import_directory_count);
@@ -324,6 +445,7 @@ void GuiPE::GUISections()
     headers << "Name" << "Raw Address" << "Raw Size" << "Virtual Address" << "Virtual Size" << "Characteristics"
     << "Ptr to Reloc." << "Ptr to Line Num." << "Num. of Reloc." << "Num. of Linenum.";
     SectionHeaderTable->setHorizontalHeaderLabels(headers);
+    SectionHeaderTable->verticalHeader()->setVisible(false);
 
     file.seekg((unsigned) (dos_header.e_lfanew + sizeof(nt_header64)));
     file.read(
@@ -372,187 +494,229 @@ void GuiPE::GUINtHeader()
     QStringList headers;
     headers << "Offset" << "Name" << "Value" << "Value";
     FileHeaderTable->setHorizontalHeaderLabels(headers);
+    FileHeaderTable->verticalHeader()->setVisible(false);
+
     OptionalHeaderTable->setHorizontalHeaderLabels(headers);
+    OptionalHeaderTable->verticalHeader()->setVisible(false);
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, file_header.Machine)), std::ios::beg);
     FileHeaderTable->setItem(0, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    FileHeaderTable->item(0, 0)->setForeground(QColor(0, 0, 255));
     FileHeaderTable->setItem(0, 1, new QTableWidgetItem("Machine"));
     FileHeaderTable->setItem(0, 2, new QTableWidgetItem(QString::number(nt_header64.file_header.Machine, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, file_header.NumberOfSections)), std::ios::beg);
     FileHeaderTable->setItem(1, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    FileHeaderTable->item(1, 0)->setForeground(QColor(0, 0, 255));
     FileHeaderTable->setItem(1, 1, new QTableWidgetItem("Sections Count"));
     FileHeaderTable->setItem(1, 2, new QTableWidgetItem(QString::number(nt_header64.file_header.NumberOfSections, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, file_header.TimeDateStamp)), std::ios::beg);
     FileHeaderTable->setItem(2, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    FileHeaderTable->item(2, 0)->setForeground(QColor(0, 0, 255));
     FileHeaderTable->setItem(2, 1, new QTableWidgetItem("Time Date Stamp"));
     FileHeaderTable->setItem(2, 2, new QTableWidgetItem(QString::number(nt_header64.file_header.TimeDateStamp, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, file_header.PointerToSymbolTable)), std::ios::beg);
     FileHeaderTable->setItem(3, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    FileHeaderTable->item(3, 0)->setForeground(QColor(0, 0, 255));
     FileHeaderTable->setItem(3, 1, new QTableWidgetItem("Pointer to Symbol Table"));
     FileHeaderTable->setItem(3, 2, new QTableWidgetItem(QString::number(nt_header64.file_header.PointerToSymbolTable, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, file_header.NumberOfSymbols)), std::ios::beg);
     FileHeaderTable->setItem(4, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    FileHeaderTable->item(4, 0)->setForeground(QColor(0, 0, 255));
     FileHeaderTable->setItem(4, 1, new QTableWidgetItem("Number of Symbols"));
     FileHeaderTable->setItem(4, 2, new QTableWidgetItem(QString::number(nt_header64.file_header.NumberOfSymbols, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, file_header.SizeOfOptionalHeader)), std::ios::beg);
     FileHeaderTable->setItem(5, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    FileHeaderTable->item(5, 0)->setForeground(QColor(0, 0, 255));
     FileHeaderTable->setItem(5, 1, new QTableWidgetItem("Size of OptionalHeader"));
     FileHeaderTable->setItem(5, 2, new QTableWidgetItem(QString::number(nt_header64.file_header.SizeOfOptionalHeader, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, file_header.Characteristics)), std::ios::beg);
     FileHeaderTable->setItem(6, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    FileHeaderTable->item(6, 0)->setForeground(QColor(0, 0, 255));
     FileHeaderTable->setItem(6, 1, new QTableWidgetItem("Characteristics"));
     FileHeaderTable->setItem(6, 2, new QTableWidgetItem(QString::number(nt_header64.file_header.Characteristics, 16).toUpper()));
+
+    FileHeaderTable->setColumnWidth(1, 250);
+    FileHeaderTable->setColumnWidth(2, 200);
 
     PETabs->addTab(FileHeaderTable, "File Header");
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.Magic)), std::ios::beg);
     OptionalHeaderTable->setItem(0, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(0, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(0, 1, new QTableWidgetItem("Magic"));
     OptionalHeaderTable->setItem(0, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.Magic, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.MajorLinkerVersion)), std::ios::beg);
     OptionalHeaderTable->setItem(1, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(1, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(1, 1, new QTableWidgetItem("Linker Ver. (Major)"));
     OptionalHeaderTable->setItem(1, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.MajorLinkerVersion, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.MinorLinkerVersion)), std::ios::beg);
     OptionalHeaderTable->setItem(2, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(2, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(2, 1, new QTableWidgetItem("Linker Ver. (Minor)"));
     OptionalHeaderTable->setItem(2, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.MinorLinkerVersion, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SizeOfCode)), std::ios::beg);
     OptionalHeaderTable->setItem(3, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(3, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(3, 1, new QTableWidgetItem("Size of Code"));
     OptionalHeaderTable->setItem(3, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SizeOfCode, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SizeOfInitializedData)), std::ios::beg);
     OptionalHeaderTable->setItem(4, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(4, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(4, 1, new QTableWidgetItem("Size of Initialized Data"));
     OptionalHeaderTable->setItem(4, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SizeOfInitializedData, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SizeOfUninitializedData)), std::ios::beg);
     OptionalHeaderTable->setItem(5, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(5, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(5, 1, new QTableWidgetItem("Size of Uninitialized Data"));
     OptionalHeaderTable->setItem(5, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SizeOfUninitializedData, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.AddressOfEntryPoint)), std::ios::beg);
     OptionalHeaderTable->setItem(6, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(6, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(6, 1, new QTableWidgetItem("Entry Point"));
     OptionalHeaderTable->setItem(6, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.AddressOfEntryPoint, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.BaseOfCode)), std::ios::beg);
     OptionalHeaderTable->setItem(7, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(7, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(7, 1, new QTableWidgetItem("Base of Code"));
     OptionalHeaderTable->setItem(7, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.BaseOfCode, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.ImageBase)), std::ios::beg);
     OptionalHeaderTable->setItem(9, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(9, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(9, 1, new QTableWidgetItem("Image Base"));
     OptionalHeaderTable->setItem(9, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.ImageBase, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SectionAlignment)), std::ios::beg);
     OptionalHeaderTable->setItem(10, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(10, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(10, 1, new QTableWidgetItem("Section Alignment"));
     OptionalHeaderTable->setItem(10, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SectionAlignment, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.FileAlignment)), std::ios::beg);
     OptionalHeaderTable->setItem(11, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(11, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(11, 1, new QTableWidgetItem("File Alignment"));
     OptionalHeaderTable->setItem(11, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.FileAlignment, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.MajorOperatingSystemVersion)), std::ios::beg);
     OptionalHeaderTable->setItem(12, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(12, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(12, 1, new QTableWidgetItem("OS Ver. (Major)"));
     OptionalHeaderTable->setItem(12, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.MajorOperatingSystemVersion, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.MinorOperatingSystemVersion)), std::ios::beg);
     OptionalHeaderTable->setItem(13, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(13, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(13, 1, new QTableWidgetItem("OS Ver. (Minor)"));
     OptionalHeaderTable->setItem(13, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.MinorOperatingSystemVersion, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.MajorImageVersion)), std::ios::beg);
     OptionalHeaderTable->setItem(14, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(14, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(14, 1, new QTableWidgetItem("Image Ver. (Major)"));
     OptionalHeaderTable->setItem(14, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.MajorImageVersion, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.MinorImageVersion)), std::ios::beg);
     OptionalHeaderTable->setItem(15, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(15, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(15, 1, new QTableWidgetItem("Image Ver. (Minor)"));
     OptionalHeaderTable->setItem(15, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.MinorImageVersion, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.MajorSubsystemVersion)), std::ios::beg);
     OptionalHeaderTable->setItem(16, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(16, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(16, 1, new QTableWidgetItem("Subsystem Ver. (Major)"));
     OptionalHeaderTable->setItem(16, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.MajorSubsystemVersion, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.MinorSubsystemVersion)), std::ios::beg);
     OptionalHeaderTable->setItem(17, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(17, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(17, 1, new QTableWidgetItem("Subsystem Ver. Minor)"));
     OptionalHeaderTable->setItem(17, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.MinorSubsystemVersion, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.Win32VersionValue)), std::ios::beg);
     OptionalHeaderTable->setItem(18, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(18, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(18, 1, new QTableWidgetItem("Win32 Version Value"));
     OptionalHeaderTable->setItem(18, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.Win32VersionValue, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SizeOfImage)), std::ios::beg);
     OptionalHeaderTable->setItem(19, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(19, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(19, 1, new QTableWidgetItem("Size of Image"));
     OptionalHeaderTable->setItem(19, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SizeOfImage, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SizeOfHeaders)), std::ios::beg);
     OptionalHeaderTable->setItem(20, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(20, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(20, 1, new QTableWidgetItem("Size of Headers"));
     OptionalHeaderTable->setItem(20, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SizeOfHeaders, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.CheckSum)), std::ios::beg);
     OptionalHeaderTable->setItem(21, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(21, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(21, 1, new QTableWidgetItem("Checksum"));
     OptionalHeaderTable->setItem(21, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.CheckSum, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.Subsystem)), std::ios::beg);
     OptionalHeaderTable->setItem(22, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(22, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(22, 1, new QTableWidgetItem("Subsystem"));
     OptionalHeaderTable->setItem(22, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.Subsystem, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DllCharacteristics)), std::ios::beg);
     OptionalHeaderTable->setItem(23, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(23, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(23, 1, new QTableWidgetItem("DLL Characteristics"));
     OptionalHeaderTable->setItem(23, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.DllCharacteristics, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SizeOfStackReserve)), std::ios::beg);
     OptionalHeaderTable->setItem(24, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(24, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(24, 1, new QTableWidgetItem("Size of Stack Reserve"));
     OptionalHeaderTable->setItem(24, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SizeOfStackReserve, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SizeOfStackCommit)), std::ios::beg);
     OptionalHeaderTable->setItem(25, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(25, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(25, 1, new QTableWidgetItem("Size of Stack Commit"));
     OptionalHeaderTable->setItem(25, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SizeOfStackCommit, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SizeOfHeapReserve)), std::ios::beg);
     OptionalHeaderTable->setItem(26, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(26, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(26, 1, new QTableWidgetItem("Size of Heap Reserve"));
     OptionalHeaderTable->setItem(26, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SizeOfHeapReserve, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.SizeOfHeapCommit)), std::ios::beg);
     OptionalHeaderTable->setItem(27, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(27, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(27, 1, new QTableWidgetItem("Size of Heap Commit"));
     OptionalHeaderTable->setItem(27, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.SizeOfHeapCommit, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.LoaderFlags)), std::ios::beg);
     OptionalHeaderTable->setItem(28, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(28, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(28, 1, new QTableWidgetItem("Loader Flags"));
     OptionalHeaderTable->setItem(28, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.LoaderFlags, 16).toUpper()));
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.NumberOfRvaAndSizes)), std::ios::beg);
     OptionalHeaderTable->setItem(29, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(29, 0)->setForeground(QColor(0, 0, 255));
     OptionalHeaderTable->setItem(29, 1, new QTableWidgetItem("Number of RVAs and Sizes"));
     OptionalHeaderTable->setItem(29, 2, new QTableWidgetItem(QString::number(nt_header64.optional_header64.NumberOfRvaAndSizes, 16).toUpper()));
 
@@ -568,8 +732,16 @@ void GuiPE::GUINtHeader()
     SizeHeader->setBackground(lightBlue);
     OptionalHeaderTable->setItem(30, 3, SizeHeader);
 
+    OptionalHeaderTable->insertColumn(4);
+    OptionalHeaderTable->setHorizontalHeaderItem(4, new QTableWidgetItem(""));
+    OptionalHeaderTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Stretch);
+
+    OptionalHeaderTable->setColumnWidth(1, 250);
+    OptionalHeaderTable->setColumnWidth(2, 200);
+
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_EXPORT])), std::ios::beg);
     OptionalHeaderTable->setItem(31, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(31, 0)->setForeground(QColor(0, 0, 255));
     auto * ExportDirectoryName = new QTableWidgetItem("Export Directory");
     ExportDirectoryName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(31, 1, ExportDirectoryName);
@@ -578,6 +750,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_IMPORT])), std::ios::beg);
     OptionalHeaderTable->setItem(32, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(32, 0)->setForeground(QColor(0, 0, 255));
     auto * ImportDirectoryName = new QTableWidgetItem("Import Directory");
     ImportDirectoryName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(32, 1, ImportDirectoryName);
@@ -586,6 +759,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_RESOURCE])), std::ios::beg);
     OptionalHeaderTable->setItem(33, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(33, 0)->setForeground(QColor(0, 0, 255));
     auto * ResourceDirectoryName = new QTableWidgetItem("Resource Directory");
     ResourceDirectoryName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(33, 1, ResourceDirectoryName);
@@ -594,6 +768,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_EXCEPTION])), std::ios::beg);
     OptionalHeaderTable->setItem(34, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(34, 0)->setForeground(QColor(0, 0, 255));
     auto * ExceptionDirectoryName = new QTableWidgetItem("Exception Directory");
     ExceptionDirectoryName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(34, 1, ExceptionDirectoryName);
@@ -602,6 +777,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_SECURITY])), std::ios::beg);
     OptionalHeaderTable->setItem(35, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(35, 0)->setForeground(QColor(0, 0, 255));
     auto * SecurityDirectoryName = new QTableWidgetItem("Security Directory");
     SecurityDirectoryName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(35, 1, SecurityDirectoryName);
@@ -610,6 +786,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_BASERELOC])), std::ios::beg);
     OptionalHeaderTable->setItem(36, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(36, 0)->setForeground(QColor(0, 0, 255));
     auto * BaseRelocationTableName = new QTableWidgetItem("Base Relocation Table");
     BaseRelocationTableName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(36, 1, BaseRelocationTableName);
@@ -618,6 +795,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_DEBUG])), std::ios::beg);
     OptionalHeaderTable->setItem(37, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(37, 0)->setForeground(QColor(0, 0, 255));
     auto * DebugDirectoryName = new QTableWidgetItem("Debug Directory");
     DebugDirectoryName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(37, 1, DebugDirectoryName);
@@ -626,6 +804,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_ARCHITECTURE])), std::ios::beg);
     OptionalHeaderTable->setItem(38, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(38, 0)->setForeground(QColor(0, 0, 255));
     auto * ArchitectureSpecificDataName = new QTableWidgetItem("Architecture Specific Data");
     ArchitectureSpecificDataName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(38, 1, ArchitectureSpecificDataName);
@@ -634,6 +813,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_GLOBALPTR])), std::ios::beg);
     OptionalHeaderTable->setItem(39, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(39, 0)->setForeground(QColor(0, 0, 255));
     auto * RVAOfGlobalPointerName = new QTableWidgetItem("RVA of Global Pointer");
     RVAOfGlobalPointerName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(39, 1, RVAOfGlobalPointerName);
@@ -642,6 +822,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_TLS])), std::ios::beg);
     OptionalHeaderTable->setItem(40, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(40, 0)->setForeground(QColor(0, 0, 255));
     auto * TLSDirectoryName = new QTableWidgetItem("TLS Directory");
     TLSDirectoryName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(40, 1, TLSDirectoryName);
@@ -650,6 +831,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_BOUND_IMPORT])), std::ios::beg);
     OptionalHeaderTable->setItem(41, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(41, 0)->setForeground(QColor(0, 0, 255));
     auto * BoundImportDirectoryName = new QTableWidgetItem("Bound Import Directory");
     BoundImportDirectoryName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(41, 1, BoundImportDirectoryName);
@@ -658,6 +840,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_IAT])), std::ios::beg);
     OptionalHeaderTable->setItem(42, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(42, 0)->setForeground(QColor(0, 0, 255));
     auto * ImportAddressTableName = new QTableWidgetItem("Import Address Table");
     ImportAddressTableName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(42, 1, ImportAddressTableName);
@@ -666,6 +849,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_DELAY_IMPORT])), std::ios::beg);
     OptionalHeaderTable->setItem(43, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(43, 0)->setForeground(QColor(0, 0, 255));
     auto * DelayLoadImportName = new QTableWidgetItem("Delay Load Import Descriptors");
     DelayLoadImportName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(43, 1, DelayLoadImportName);
@@ -674,6 +858,7 @@ void GuiPE::GUINtHeader()
 
     file.seekg((unsigned int) (dos_header.e_lfanew + offsetof(NTHeader_64, optional_header64.DataDirectory[DIRECTORY_ENTRY_COM_DESCRIPTOR])), std::ios::beg);
     OptionalHeaderTable->setItem(44, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    OptionalHeaderTable->item(44, 0)->setForeground(QColor(0, 0, 255));
     auto * NetHeaderName = new QTableWidgetItem(".NET header");
     NetHeaderName->setBackground(lightBlue);
     OptionalHeaderTable->setItem(44, 1, NetHeaderName);
@@ -694,74 +879,91 @@ void GuiPE::GUIDosHeader()
     QStringList headers;
     headers << "Offset" << "Name" << "Value";
     DosTable->setHorizontalHeaderLabels(headers);
+    DosTable->verticalHeader()->setVisible(false);
+
+    DosTable->setColumnWidth(1, 250);
 
     file.seekg(0, std::ios::beg);
     DosTable->setItem(0, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(0, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(0, 1, new QTableWidgetItem("Magic"));
     DosTable->setItem(0, 2, new QTableWidgetItem(QString::number(dos_header.e_magic, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_cblp), std::ios::beg);
     DosTable->setItem(1, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(1, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(1, 1, new QTableWidgetItem("Bytes on last page of file"));
     DosTable->setItem(1, 2, new QTableWidgetItem(QString::number(dos_header.e_cblp, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_cp), std::ios::beg);
     DosTable->setItem(2, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(2, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(2, 1, new QTableWidgetItem("Pages in file"));
     DosTable->setItem(2, 2, new QTableWidgetItem(QString::number(dos_header.e_cp, 16)));
 
     file.seekg(offsetof(DOS_HEADER, e_crlc), std::ios::beg);
     DosTable->setItem(3, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(3, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(3, 1, new QTableWidgetItem("Relocations"));
     DosTable->setItem(3, 2, new QTableWidgetItem(QString::number(dos_header.e_crlc, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_cparhdr), std::ios::beg);
     DosTable->setItem(4, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(4, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(4, 1, new QTableWidgetItem("Size of header in paragraphs"));
     DosTable->setItem(4, 2, new QTableWidgetItem(QString::number(dos_header.e_cparhdr, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_minalloc), std::ios::beg);
     DosTable->setItem(5, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(5, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(5, 1, new QTableWidgetItem("Minimum extra paragraphs needed"));
     DosTable->setItem(5, 2, new QTableWidgetItem(QString::number(dos_header.e_minalloc, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_maxalloc), std::ios::beg);
     DosTable->setItem(6, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(6, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(6, 1, new QTableWidgetItem("Maximum extra paragraphs needed"));
     DosTable->setItem(6, 2, new QTableWidgetItem(QString::number(dos_header.e_maxalloc, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_ss), std::ios::beg);
     DosTable->setItem(7, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(7, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(7, 1, new QTableWidgetItem("Initial (relative) SS value"));
     DosTable->setItem(7, 2, new QTableWidgetItem(QString::number(dos_header.e_ss, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_sp), std::ios::beg);
     DosTable->setItem(8, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(8, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(8, 1, new QTableWidgetItem("Initial SP value"));
     DosTable->setItem(8, 2, new QTableWidgetItem(QString::number(dos_header.e_sp, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_csum), std::ios::beg);
     DosTable->setItem(9, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(9, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(9, 1, new QTableWidgetItem("Checksum"));
     DosTable->setItem(9, 2, new QTableWidgetItem(QString::number(dos_header.e_csum, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_ip), std::ios::beg);
     DosTable->setItem(10, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(10, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(10, 1, new QTableWidgetItem("Initial IP value"));
     DosTable->setItem(10, 2, new QTableWidgetItem(QString::number(dos_header.e_ip, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_cs), std::ios::beg);
     DosTable->setItem(11, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(11, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(11, 1, new QTableWidgetItem("Initial (relative) CS value"));
     DosTable->setItem(11, 2, new QTableWidgetItem(QString::number(dos_header.e_cs, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_lfarlc), std::ios::beg);
     DosTable->setItem(12, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(12, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(12, 1, new QTableWidgetItem("File address of relocation table"));
     DosTable->setItem(12, 2, new QTableWidgetItem(QString::number(dos_header.e_lfarlc, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_ovno), std::ios::beg);
     DosTable->setItem(13, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(13, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(13, 1, new QTableWidgetItem("Overlay number"));
     DosTable->setItem(13, 2, new QTableWidgetItem(QString::number(dos_header.e_ovno, 16).toUpper()));
 
@@ -774,21 +976,25 @@ void GuiPE::GUIDosHeader()
 
     file.seekg(offsetof(DOS_HEADER, e_res), std::ios::beg);
     DosTable->setItem(14, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(14, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(14, 1, new QTableWidgetItem("Reserved word[4]"));
     DosTable->setItem(14, 2, new QTableWidgetItem(QString::fromStdString(e_res_values)));
 
     file.seekg(offsetof(DOS_HEADER, e_oemid), std::ios::beg);
     DosTable->setItem(15, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(15, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(15, 1, new QTableWidgetItem("OEM identifier (for OEM information)"));
     DosTable->setItem(15, 2, new QTableWidgetItem(QString::number(dos_header.e_oemid, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_oeminfo), std::ios::beg);
     DosTable->setItem(16, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(16, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(16, 1, new QTableWidgetItem("OEM information"));
     DosTable->setItem(16, 2, new QTableWidgetItem(QString::number(dos_header.e_oeminfo, 16).toUpper()));
 
     file.seekg(offsetof(DOS_HEADER, e_ovno), std::ios::beg);
     DosTable->setItem(17, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(17, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(17, 1, new QTableWidgetItem("Overlay number"));
     DosTable->setItem(17, 2, new QTableWidgetItem(QString::number(dos_header.e_ovno, 16).toUpper()));
 
@@ -801,13 +1007,16 @@ void GuiPE::GUIDosHeader()
 
     file.seekg(offsetof(DOS_HEADER, e_res2), std::ios::beg);
     DosTable->setItem(18, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(18, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(18, 1, new QTableWidgetItem("Reserved word[10]"));
     DosTable->setItem(18, 2, new QTableWidgetItem(QString::fromStdString(e_res2_values)));
 
     file.seekg(offsetof(DOS_HEADER, e_lfanew), std::ios::beg);
     DosTable->setItem(19, 0, new QTableWidgetItem(QString::number(file.tellg(), 16).toUpper()));
+    DosTable->item(19, 0)->setForeground(QColor(0, 0, 255));
     DosTable->setItem(19, 1, new QTableWidgetItem("File address header"));
     DosTable->setItem(19, 2, new QTableWidgetItem(QString::number(dos_header.e_lfanew, 16).toUpper()));
+
 
     PETabs->addTab(DosTable, "Dos Header");
 }
@@ -835,4 +1044,6 @@ void GuiPE::Load(const std::string& file_path)
     GUIExceptions();
     GUIBaseRelocations();
     GUITLS();
+
+    connectTablesToHexViewer();
 }

@@ -3,22 +3,24 @@
 
 #include <iostream>
 #include <fstream>
-#include <sstream>
 
 #include "Win32.hpp"
+
 #include "QTableWidget"
 #include "QTableWidgetItem"
 #include "QVBoxLayout"
 #include "QHeaderView"
 #include "QLabel"
 
-class GuiPE
+class GuiPE : public QObject
 {
+   Q_OBJECT
+
     private:
         std::ifstream file;
 
         QTabWidget * PETabs;
-
+        QTableWidget* hexViewer = nullptr;
         QTableWidget * DosTable;
         QTableWidget * FileHeaderTable;
         QTableWidget * OptionalHeaderTable;
@@ -54,10 +56,15 @@ class GuiPE
         static void formatTable(QTableWidget * table);
         unsigned int RvaToOffset(unsigned int rva);
 
+        void connectTablesToHexViewer() const;
+        void onOffsetCellClicked(int row, int column);
+        void updateHexViewer(int offset);
     public:
         void Load(const std::string &path);
-        QTabWidget * getTabs();
+        void createHexByteViewer(QWidget * parent, const std::string& filePath, int numLines, int offset);
 
+        QTableWidget * getHexViewer() { return hexViewer; }
+        QTabWidget * getTabs();
 };
 
 #endif //HEADERS_PEFILE_HPP
