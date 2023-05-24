@@ -1191,7 +1191,6 @@ void GuiPE::GUIDosHeader()
     DosTable->setItem(19, 1, new QTableWidgetItem("File address header"));
     DosTable->setItem(19, 2, new QTableWidgetItem(QString::number(dos_header.e_lfanew, 16).toUpper()));
 
-
     PETabs->addTab(DosTable, "Dos Header");
 }
 

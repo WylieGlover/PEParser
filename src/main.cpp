@@ -14,7 +14,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     QMainWindow main_window;
     QIcon windowIcon(R"(C:\Users\FindW\Desktop\5679795.png)");
     main_window.resize(901, 675);
-    main_window.setWindowTitle("PE64 Parser v1.1");
+    main_window.setWindowTitle("PE64 Parser v1.2");
     main_window.setWindowIcon(windowIcon);
 
     auto * centralWidget = new QWidget(&main_window);
