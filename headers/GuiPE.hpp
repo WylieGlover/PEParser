@@ -22,7 +22,8 @@ class GuiPE : public QObject
         std::ifstream file;
 
         QTabWidget * PETabs;
-        QTableWidget* hexViewer = nullptr;
+
+        QTableWidget * hexViewer = nullptr;
         QTableWidget * DosTable;
         QTableWidget * FileHeaderTable;
         QTableWidget * OptionalHeaderTable;
@@ -31,10 +32,12 @@ class GuiPE : public QObject
         QTableWidget * ImportEntriesTable;
         QTableWidget * ExceptionsTable;
         QTableWidget * BaseRelocationTable;
+        QTableWidget * BaseRelocationEntriesTable;
         QTableWidget * TlsTable;
         QTableWidget * TlsCallbackTable;
 
-        QLabel* entriesCountLabel;
+        QLabel * baseRelocationCountLabel;
+        QLabel * importsCountLabel;
 
         DOS_HEADER dos_header;
         NTHeader_64 nt_header64;
@@ -45,11 +48,14 @@ class GuiPE : public QObject
         ILT_ENTRY ilt_entry;
         EXCEPTIONS exceptions;
         BASE_RELOCATION base_relocation;
+        BASE_RELOCATION * base_relocation_table;
         BASE_RELOCATION_ENTRY base_relocation_entry;
         TLS_DIRECTORY64 tls_directory64;
         TLS_CALLBACK64 tls_callback64;
 
-        int entry_counter = 0;
+        int entry_counter;
+        int import_directory_count;
+        int base_relocation_directory_count;
 
         void GUIDosHeader();
         void GUINtHeader();
@@ -66,11 +72,11 @@ class GuiPE : public QObject
         void onOffsetCellClicked(int row, int column);
         void updateHexViewer(int offset);
         void handleImportSelection();
+        void handleBaseRelocationSelection();
     public:
         void Load(const std::string &path);
         void createHexByteViewer(QWidget * parent, const std::string& filePath, int numLines, int offset);
 
-        QTableWidget * getHexViewer() { return hexViewer; }
         QTabWidget * getTabs();
 };
 

@@ -206,8 +206,8 @@ struct BASE_RELOCATION {
 };
 
 struct BASE_RELOCATION_ENTRY {
-    WORD OFFSET : 12;
-    WORD TYPE : 4;
+    WORD Offset : 12;
+    WORD Type : 4;
 };
 
 struct EXCEPTIONS {

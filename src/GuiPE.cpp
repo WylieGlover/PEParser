@@ -11,50 +11,6 @@ QTabWidget * GuiPE::getTabs()
     return PETabs;
 }
 
-void GuiPE::updateHexViewer(int hex_offset)
-{
-    if (!hexViewer) return;
-
-    const int numRows = hexViewer->rowCount();
-    const int numCols = hexViewer->columnCount();
-
-    // Clear the hexViewer
-    hexViewer->clearContents();
-
-    // Set the vertical headers
-    for (int row = 0; row < numRows; ++row) {
-        int offset = hex_offset + (row * 16);
-        hexViewer->setVerticalHeaderItem(row, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
-    }
-
-    // Seek to the desired offset in the file
-    file.seekg(hex_offset);
-
-    // Read and update the hexViewer cell by cell
-    for (int row = 0; row < numRows; ++row) {
-        for (int col = 0; col < numCols; ++col) {
-            char byte;
-            file.read(&byte, sizeof(byte));
-
-            if (file.eof()) {
-                // End of file reached, break the loop
-                break;
-            }
-
-            QString hexValue = QString::number(static_cast<unsigned char>(byte), 16).toUpper();
-
-            if (hexValue.length() == 1) {
-                hexValue = "0" + hexValue;
-            }
-
-            auto* byteItem = new QTableWidgetItem(hexValue);
-            byteItem->setTextAlignment(Qt::AlignCenter);
-
-            hexViewer->setItem(row, col, byteItem);
-        }
-    }
-}
-
 void GuiPE::connectTablesToHexViewer() const
 {
     if(DosTable)
@@ -69,26 +25,12 @@ void GuiPE::connectTablesToHexViewer() const
         connect(ExceptionsTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
     if(BaseRelocationTable)
         connect(BaseRelocationTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    if(BaseRelocationEntriesTable)
+        connect(BaseRelocationEntriesTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
     if(TlsTable)
         connect(TlsTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
     if(TlsCallbackTable)
         connect(TlsCallbackTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
-}
-
-void GuiPE::onOffsetCellClicked(int row, int column)
-{
-    if (column == 0) {
-        bool ok;
-        auto * senderTable = qobject_cast<QTableWidget*>(sender());
-        if (senderTable) {
-            QTableWidgetItem *item = senderTable->item(row, column);
-            if(item) {
-                int offset = item->text().toInt(&ok, 16);
-                if (ok)
-                    updateHexViewer(offset);
-            }
-        }
-    }
 }
 
 void GuiPE::formatTable(QTableWidget* table)
@@ -110,6 +52,61 @@ void GuiPE::formatTable(QTableWidget* table)
     table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
 
     table->horizontalHeader()->setSectionResizeMode(table->horizontalHeader()->count() - 1, QHeaderView::Stretch);
+}
+
+void GuiPE::updateHexViewer(int hex_offset)
+{
+    if (!hexViewer) return;
+
+    const int numRows = hexViewer->rowCount();
+    const int numCols = hexViewer->columnCount();
+
+    hexViewer->clearContents();
+
+    for (int row = 0; row < numRows; ++row) {
+        int offset = hex_offset + (row * 16);
+        hexViewer->setVerticalHeaderItem(row, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    }
+
+    file.seekg(hex_offset);
+
+    for (int row = 0; row < numRows; ++row) {
+        for (int col = 0; col < numCols; ++col) {
+            char byte;
+            file.read(&byte, sizeof(byte));
+
+            if (file.eof()) {
+                break;
+            }
+
+            QString hexValue = QString::number(static_cast<unsigned char>(byte), 16).toUpper();
+
+            if (hexValue.length() == 1) {
+                hexValue = "0" + hexValue;
+            }
+
+            auto * byteItem = new QTableWidgetItem(hexValue);
+            byteItem->setTextAlignment(Qt::AlignCenter);
+
+            hexViewer->setItem(row, col, byteItem);
+        }
+    }
+}
+
+void GuiPE::onOffsetCellClicked(int row, int column)
+{
+    if (column == 0) {
+        bool ok;
+        auto * senderTable = qobject_cast<QTableWidget*>(sender());
+        if (senderTable) {
+            QTableWidgetItem *item = senderTable->item(row, column);
+            if(item) {
+                int offset = item->text().toInt(&ok, 16);
+                if (ok)
+                    updateHexViewer(offset);
+            }
+        }
+    }
 }
 
 void formatHexTable(QTableWidget* table)
@@ -276,7 +273,7 @@ void GuiPE::GUIBaseRelocations()
     BaseRelocationTable->verticalHeader()->setVisible(false);
 
     DWORD directory_base_relocation_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
-    int base_relocation_directory_count = 0;
+    base_relocation_directory_count = 0;
     int base_relocation_size_counter = 0;
 
     while(true) {
@@ -297,7 +294,7 @@ void GuiPE::GUIBaseRelocations()
 
     BaseRelocationTable->setRowCount(base_relocation_directory_count);
 
-    auto base_relocation_table = new BASE_RELOCATION[base_relocation_directory_count];
+    base_relocation_table = new BASE_RELOCATION[base_relocation_directory_count];
     base_relocation_size_counter = 0;
 
     for(int i = 0; i < base_relocation_directory_count; i++) {
@@ -319,9 +316,95 @@ void GuiPE::GUIBaseRelocations()
         BaseRelocationTable->setItem(i, 1, new QTableWidgetItem(QString::number(base_relocation_table[i].VirtualAddress, 16).toUpper()));
         BaseRelocationTable->setItem(i, 2, new QTableWidgetItem(QString::number(base_relocation_table[i].SizeOfBlock, 16).toUpper()));
         BaseRelocationTable->setItem(i, 3, new QTableWidgetItem(QString::number(entries, 16).toUpper()));
+
     }
 
-    PETabs->addTab(BaseRelocationTable, QIcon(R"(C:\Users\FindW\Desktop\folder_icon.jpg)"), "Base Reloc.");
+    formatTable(BaseRelocationEntriesTable);
+
+    QStringList entryHeaders;
+    entryHeaders << "Offset" << "Value" << "Type" << "Offset from Page" << "Reloc RVA";
+    BaseRelocationEntriesTable->setHorizontalHeaderLabels(entryHeaders);
+    BaseRelocationEntriesTable->verticalHeader()->setVisible(false);
+
+    auto* labelFrame = new QFrame();
+    labelFrame->setFrameStyle(QFrame::Box);
+    labelFrame->setStyleSheet("background-color: lightgrey;");
+
+    baseRelocationCountLabel = new QLabel();
+    baseRelocationCountLabel->setText("Relocation block [0 entries]");  // Initial text, to be updated later
+
+    auto* labelLayout = new QHBoxLayout(labelFrame);
+    labelLayout->addWidget(baseRelocationCountLabel);
+    labelLayout->setContentsMargins(5, 5, 5, 5);
+
+    auto* layout = new QVBoxLayout;
+    layout->addWidget(BaseRelocationTable);
+    layout->addWidget(labelFrame);
+    layout->addWidget(BaseRelocationEntriesTable);
+
+    auto * tabWidget = new QWidget;
+    tabWidget->setLayout(layout);
+
+    connect(BaseRelocationTable, &QTableWidget::cellClicked, this, &GuiPE::handleBaseRelocationSelection);
+
+    PETabs->addTab(tabWidget, QIcon(R"(C:\Users\FindW\Desktop\folder_icon.jpg)"), "Base Reloc.");
+}
+
+void GuiPE::handleBaseRelocationSelection()
+{
+    DWORD directory_base_relocation_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
+
+    int row = BaseRelocationTable->currentRow();
+    if (row >= 0) {
+        BaseRelocationEntriesTable->clearContents();
+        BaseRelocationEntriesTable->setRowCount(0);
+
+        BASE_RELOCATION selectedBaseRelocation = base_relocation_table[row];
+
+        DWORD block_size = selectedBaseRelocation.SizeOfBlock;
+
+        unsigned int entries = (block_size - sizeof(BASE_RELOCATION)) / sizeof(BASE_RELOCATION_ENTRY);
+        unsigned int base_relocation_rva = RvaToOffset(directory_base_relocation_rva);
+
+        unsigned int cumulativeSize = 0;
+        for (int i = 0; i < row; i++) {
+            cumulativeSize += base_relocation_table[i].SizeOfBlock;
+        }
+
+        unsigned int base_relocation_offset = base_relocation_rva + cumulativeSize;
+
+        QString label = "Relocation block [" + QString::number(entries) + " entries]";
+        baseRelocationCountLabel->setText(label);
+
+        for (unsigned int i = 0; i < entries; i++) {
+            unsigned int offset = base_relocation_offset + sizeof(BASE_RELOCATION) + (i * sizeof(BASE_RELOCATION_ENTRY));
+            file.seekg(offset, std::ios::beg);
+
+            file.read(
+                    std::bit_cast<char*>(&base_relocation_entry),
+                    sizeof(BASE_RELOCATION_ENTRY)
+            );
+
+            WORD entry_offset = base_relocation_entry.Offset;
+            WORD entry_type = base_relocation_entry.Type;
+
+            DWORD entry_value = (entry_offset & 0xFFF) | (entry_type << 12);
+            DWORD entry_rva = base_relocation_entry.Offset + selectedBaseRelocation.VirtualAddress;
+
+            int newRow = BaseRelocationEntriesTable->rowCount();
+            BaseRelocationEntriesTable->insertRow(newRow);
+
+            QColor lightBlue(0, 0, 255);
+            auto * offsetItem = new QTableWidgetItem(QString::number(offset, 16).toUpper());
+            offsetItem->setForeground(lightBlue);
+            BaseRelocationEntriesTable->setItem(newRow, 0, offsetItem);
+
+            BaseRelocationEntriesTable->setItem(newRow, 1, new QTableWidgetItem(QString::number(entry_value, 16).toUpper()));
+            BaseRelocationEntriesTable->setItem(newRow, 2, new QTableWidgetItem("64 bit field - " + QString::number(base_relocation_entry.Type, 16).toUpper()));
+            BaseRelocationEntriesTable->setItem(newRow, 3, new QTableWidgetItem(QString::number(base_relocation_entry.Offset, 16).toUpper()));
+            BaseRelocationEntriesTable->setItem(newRow, 4, new QTableWidgetItem(QString::number(entry_rva, 16).toUpper()));
+        }
+    }
 }
 
 void GuiPE::GUIExceptions()
@@ -363,7 +446,6 @@ void GuiPE::GUIExceptions()
 
 void GuiPE::GUIImports()
 {
-    auto * ImportsLayout = new QVBoxLayout();
     formatTable(ImportsTable);
 
     QStringList headers;
@@ -373,7 +455,7 @@ void GuiPE::GUIImports()
     ImportsTable->verticalHeader()->setVisible(false);
 
     DWORD directory_import_rva = nt_header64.optional_header64.DataDirectory[DIRECTORY_ENTRY_IMPORT].VirtualAddress;
-    int import_directory_count = 0;
+    import_directory_count = 0;
 
     while (true) {
         unsigned int offset = (import_directory_count * sizeof(IMPORT_DESCRIPTOR)) + RvaToOffset(directory_import_rva);
@@ -435,26 +517,32 @@ void GuiPE::GUIImports()
     formatTable(ImportEntriesTable);
 
     QStringList entryHeaders;
-    entryHeaders << "Entry" << "Name" << "Hint";
+    entryHeaders << "Name" << "Hint" << "Original Thunk";
     ImportEntriesTable->setHorizontalHeaderLabels(entryHeaders);
     ImportEntriesTable->verticalHeader()->setVisible(false);
 
-    entriesCountLabel = new QLabel;
-    entriesCountLabel->setAlignment(Qt::AlignCenter);
-    QString entriesLabel = "Entries: " + QString::number(entry_counter);
-    entriesCountLabel->setText(entriesLabel);
+    auto* labelFrame = new QFrame();
+    labelFrame->setFrameStyle(QFrame::Box);
+    labelFrame->setStyleSheet("background-color: lightgrey;");
 
-    auto * layout = new QVBoxLayout;
+    importsCountLabel = new QLabel();
+    importsCountLabel->setText("Import [0 entries]");
+
+    auto* labelLayout = new QHBoxLayout(labelFrame);
+    labelLayout->addWidget(importsCountLabel);
+    labelLayout->setContentsMargins(5, 5, 5, 5);
+
+    auto* layout = new QVBoxLayout;
     layout->addWidget(ImportsTable);
-    layout->addWidget(entriesCountLabel);
+    layout->addWidget(labelFrame);
     layout->addWidget(ImportEntriesTable);
 
-    auto * tabWidget = new QWidget;
+    auto* tabWidget = new QWidget;
     tabWidget->setLayout(layout);
 
     connect(ImportsTable, &QTableWidget::cellClicked, this, &GuiPE::handleImportSelection);
 
-    PETabs->addTab(tabWidget, "Imports");
+    PETabs->addTab(tabWidget, QIcon(R"(C:\Users\FindW\Desktop\folder_icon.jpg)"), "Imports");
 }
 
 void GuiPE::handleImportSelection()
@@ -467,6 +555,15 @@ void GuiPE::handleImportSelection()
     if (selectedRow >= 0 && selectedRow < ImportsTable->rowCount()) {
         unsigned int ilt_address = RvaToOffset(import_table[selectedRow].misc.OriginalFirstThunk);
         entry_counter = 0;
+
+        DWORD original_first_thunk;
+        DWORD original_first_thunk_rva = import_table[selectedRow].misc.OriginalFirstThunk;
+        unsigned int original_first_thunk_offset = RvaToOffset(original_first_thunk_rva);
+
+        file.seekg(original_first_thunk_offset, std::ios::beg);
+
+        // Read the original first thunk value
+        file.read(reinterpret_cast<char*>(&original_first_thunk), sizeof(DWORD));
 
         while (true) {
             file.seekg((unsigned int)(ilt_address + (entry_counter * sizeof(QWORD))), std::ios::beg);
@@ -494,22 +591,24 @@ void GuiPE::handleImportSelection()
 
                 int rowCount = ImportEntriesTable->rowCount();
                 ImportEntriesTable->insertRow(rowCount);
-                ImportEntriesTable->setItem(rowCount, 0, new QTableWidgetItem(QString::number(entry_counter + 1)));
-                ImportEntriesTable->setItem(rowCount, 1, new QTableWidgetItem(QString(import_name.Name)));
-                ImportEntriesTable->setItem(rowCount, 2, new QTableWidgetItem(QString::number(import_name.Hint, 16).toUpper()));
+                ImportEntriesTable->setItem(rowCount, 0, new QTableWidgetItem(QString(import_name.Name)));
+                ImportEntriesTable->setItem(rowCount, 1, new QTableWidgetItem(QString::number(import_name.Hint, 16).toUpper()));
+                ImportEntriesTable->setItem(rowCount, 2, new QTableWidgetItem(QString::number(original_first_thunk, 16).toUpper()));
             }
             else if (flag == 1) {
                 int rowCount = ImportEntriesTable->rowCount();
                 ImportEntriesTable->insertRow(rowCount);
-                ImportEntriesTable->setItem(rowCount, 0, new QTableWidgetItem(QString::number(entry_counter + 1)));
+                ImportEntriesTable->setItem(rowCount, 0, new QTableWidgetItem(""));
                 ImportEntriesTable->setItem(rowCount, 1, new QTableWidgetItem(QString::number(ordinal, 16).toUpper()));
                 ImportEntriesTable->setItem(rowCount, 2, new QTableWidgetItem(""));
             }
             entry_counter++;
         }
-        QString entriesLabel = "Entries: " + QString::number(entry_counter);
-        entriesCountLabel->setText(entriesLabel);
     }
+
+    QString importName = ImportsTable->item(selectedRow, 1)->text();
+    QString label = importName + " [" + QString::number(entry_counter) + " entries]";
+    importsCountLabel->setText(label);
 }
 
 void GuiPE::GUISections()
@@ -1107,9 +1206,10 @@ void GuiPE::Load(const std::string& file_path)
     OptionalHeaderTable = new QTableWidget(45, 4);
     SectionHeaderTable = new QTableWidget(20, 10);
     ImportsTable = new QTableWidget(20, 8);
-    ImportEntriesTable = new QTableWidget(5, 3);
+    ImportEntriesTable = new QTableWidget(30, 3);
     ExceptionsTable = new QTableWidget(0, 4);
     BaseRelocationTable = new QTableWidget(0, 4);
+    BaseRelocationEntriesTable = new QTableWidget(30, 5);
     TlsTable = new QTableWidget(6, 3);
     TlsCallbackTable = new QTableWidget(0, 2);
 
