@@ -400,9 +400,15 @@ void GuiPE::handleBaseRelocationSelection()
             BaseRelocationEntriesTable->setItem(newRow, 0, offsetItem);
 
             BaseRelocationEntriesTable->setItem(newRow, 1, new QTableWidgetItem(QString::number(entry_value, 16).toUpper()));
-            BaseRelocationEntriesTable->setItem(newRow, 2, new QTableWidgetItem("64 bit field - " + QString::number(base_relocation_entry.Type, 16).toUpper()));
+            if(entry_value == 0) {
+                BaseRelocationEntriesTable->setItem(newRow, 2, new QTableWidgetItem("Padding"));
+                BaseRelocationEntriesTable->setItem(newRow, 4, new QTableWidgetItem(""));
+            }
+            else {
+                BaseRelocationEntriesTable->setItem(newRow, 2, new QTableWidgetItem("64 bit field - " + QString::number(base_relocation_entry.Type, 16).toUpper()));
+                BaseRelocationEntriesTable->setItem(newRow, 4, new QTableWidgetItem(QString::number(entry_rva, 16).toUpper()));
+            }
             BaseRelocationEntriesTable->setItem(newRow, 3, new QTableWidgetItem(QString::number(base_relocation_entry.Offset, 16).toUpper()));
-            BaseRelocationEntriesTable->setItem(newRow, 4, new QTableWidgetItem(QString::number(entry_rva, 16).toUpper()));
         }
     }
 }
