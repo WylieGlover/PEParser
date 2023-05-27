@@ -3,7 +3,6 @@
 
 #include <iostream>
 #include <fstream>
-#include <algorithm>
 
 #include "Win32.hpp"
 
@@ -12,7 +11,8 @@
 #include "QVBoxLayout"
 #include "QHeaderView"
 #include "QLabel"
-#include "QSplitter"
+#include "QScrollArea"
+#include "QFontMetrics"
 
 class GuiPE : public QObject
 {
@@ -23,7 +23,7 @@ class GuiPE : public QObject
 
         QTabWidget * PETabs;
 
-        QTableWidget * hexViewer = nullptr;
+
         QTableWidget * DosTable;
         QTableWidget * FileHeaderTable;
         QTableWidget * OptionalHeaderTable;
@@ -53,8 +53,8 @@ class GuiPE : public QObject
         TLS_DIRECTORY64 tls_directory64;
         TLS_CALLBACK64 tls_callback64;
 
-        int entry_counter;
         int import_directory_count;
+        int import_entry_counter;
         int base_relocation_directory_count;
 
         void GUIDosHeader();
@@ -66,17 +66,24 @@ class GuiPE : public QObject
         void GUITLS();
 
         static void formatTable(QTableWidget * table);
+        static void formatHexTable(QTableWidget* table);
+
         unsigned int RvaToOffset(unsigned int rva);
 
         void connectTablesToHexViewer() const;
-        void onOffsetCellClicked(int row, int column);
+        void connectTableToOffsetCellClicked(QTableWidget * table) const;
         void updateHexViewer(int offset);
+        void updateCharTable(int char_offset);
+        void onOffsetCellClicked(int row, int column);
+
         void handleImportSelection();
         void handleBaseRelocationSelection();
     public:
         void Load(const std::string &path);
         void createHexByteViewer(QWidget * parent, const std::string& filePath, int numLines, int offset);
 
+        QTableWidget * hexViewer = nullptr;
+        QTableWidget * charTable = nullptr;
         QTabWidget * getTabs();
 };
 

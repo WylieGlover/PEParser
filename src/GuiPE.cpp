@@ -2,7 +2,6 @@
 #include <bit>
 #include <vector>
 #include <string>
-#include <QtConcurrent/QtConcurrent>
 
 #include "headers/GuiPE.hpp"
 
@@ -13,24 +12,22 @@ QTabWidget * GuiPE::getTabs()
 
 void GuiPE::connectTablesToHexViewer() const
 {
-    if(DosTable)
-        connect(DosTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
-    if(FileHeaderTable)
-        connect(FileHeaderTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
-    if(OptionalHeaderTable)
-        connect(OptionalHeaderTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
-    if(ImportsTable)
-        connect(ImportsTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
-    if(ExceptionsTable)
-        connect(ExceptionsTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
-    if(BaseRelocationTable)
-        connect(BaseRelocationTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
-    if(BaseRelocationEntriesTable)
-        connect(BaseRelocationEntriesTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
-    if(TlsTable)
-        connect(TlsTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
-    if(TlsCallbackTable)
-        connect(TlsCallbackTable, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    connectTableToOffsetCellClicked(DosTable);
+    connectTableToOffsetCellClicked(FileHeaderTable);
+    connectTableToOffsetCellClicked(OptionalHeaderTable);
+    connectTableToOffsetCellClicked(ImportsTable);
+    connectTableToOffsetCellClicked(ExceptionsTable);
+    connectTableToOffsetCellClicked(BaseRelocationTable);
+    connectTableToOffsetCellClicked(BaseRelocationEntriesTable);
+    connectTableToOffsetCellClicked(TlsTable);
+    connectTableToOffsetCellClicked(TlsCallbackTable);
+}
+
+void GuiPE::connectTableToOffsetCellClicked(QTableWidget* table) const {
+    if (table)
+    {
+        connect(table, &QTableWidget::cellClicked, this, &GuiPE::onOffsetCellClicked);
+    }
 }
 
 void GuiPE::formatTable(QTableWidget* table)
@@ -41,6 +38,7 @@ void GuiPE::formatTable(QTableWidget* table)
     table->verticalHeader()->setSectionsClickable(false);
     table->setShowGrid(false);
     table->setAlternatingRowColors(true);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
 
     table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft);
     table->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -52,6 +50,48 @@ void GuiPE::formatTable(QTableWidget* table)
     table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
 
     table->horizontalHeader()->setSectionResizeMode(table->horizontalHeader()->count() - 1, QHeaderView::Stretch);
+}
+
+
+void GuiPE::updateCharTable(int char_offset)
+{
+    if (!charTable) return;
+
+    const int numRows = charTable->rowCount();
+    const int numCols = charTable->columnCount();
+
+    charTable->clearContents();
+
+    for (int row = 0; row < numRows; ++row) {
+        int offset = char_offset + (row * 16);
+        charTable->setVerticalHeaderItem(row, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+    }
+
+    file.seekg(char_offset);
+
+    for (int row = 0; row < numRows; ++row) {
+
+        for (int col = 0; col < numCols; ++col) {
+            char byte;
+            file.read(&byte, sizeof(byte));
+
+            if (file.eof()) {
+                break;
+            }
+
+            QString charValue;
+            if (std::isprint(byte)) {
+                charValue = QString::fromLatin1(&byte, 1);
+            } else {
+                charValue = ".";
+            }
+
+            auto * charItem = new QTableWidgetItem(charValue);
+            charItem->setTextAlignment(Qt::AlignCenter);
+
+            charTable->setItem(row, col, charItem);
+        }
+    }
 }
 
 void GuiPE::updateHexViewer(int hex_offset)
@@ -85,10 +125,11 @@ void GuiPE::updateHexViewer(int hex_offset)
                 hexValue = "0" + hexValue;
             }
 
-            auto * byteItem = new QTableWidgetItem(hexValue);
+            auto* byteItem = new QTableWidgetItem(hexValue);
             byteItem->setTextAlignment(Qt::AlignCenter);
 
             hexViewer->setItem(row, col, byteItem);
+
         }
     }
 }
@@ -97,51 +138,89 @@ void GuiPE::onOffsetCellClicked(int row, int column)
 {
     if (column == 0) {
         bool ok;
-        auto * senderTable = qobject_cast<QTableWidget*>(sender());
+        auto* senderTable = qobject_cast<QTableWidget*>(sender());
         if (senderTable) {
-            QTableWidgetItem *item = senderTable->item(row, column);
-            if(item) {
+            QTableWidgetItem* item = senderTable->item(row, column);
+            if (item) {
                 int offset = item->text().toInt(&ok, 16);
-                if (ok)
+                if (ok) {
                     updateHexViewer(offset);
+                    updateCharTable(offset);
+                }
             }
         }
     }
 }
 
-void formatHexTable(QTableWidget* table)
+void GuiPE::formatHexTable(QTableWidget* table)
 {
     table->horizontalHeader()->setSectionsClickable(false);
-    table->verticalHeader()->setSectionsClickable(false);
     table->setShowGrid(false);
 
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-    table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
 
-    table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    table->horizontalHeader()->setContentsMargins(QMargins(0, 0, 0, 0));
+    table->verticalHeader()->setContentsMargins(QMargins(0, 0, 0, 0));
+    table->horizontalHeader()->setMinimumSectionSize(10);
+    table->verticalHeader()->setMinimumSectionSize(18);
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    table->verticalHeader()->setSectionsClickable(true);
+
+
 }
 
 void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, int numLines, int hex_offset)
 {
-    if(!hexViewer)
+    QStringList offsetHeaders;
+    const int columnWidth = 150; // Adjust this value as needed
+
+    if (!hexViewer)
     {
         hexViewer = new QTableWidget(parent);
         formatHexTable(hexViewer);
         hexViewer->setStyleSheet("QTableView { padding: 0; spacing: 0; }");
 
         QFont font;
-        font.setPointSize(8);
-
+        font.setPointSize(10);
         hexViewer->setFont(font);
         hexViewer->setRowCount(numLines);
         hexViewer->setColumnCount(16);
 
-        QStringList offsetHeaders;
         offsetHeaders << "0" << "1" << "2" << "3" << "4" << "5" << "6" << "7" << "8" << "9" << "A" << "B" << "C" << "D" << "E" << "F";
         hexViewer->setHorizontalHeaderLabels(offsetHeaders);
+
+        // Set column width
+        for (int col = 0; col < 16; ++col) {
+            hexViewer->setColumnWidth(col, columnWidth);
+        }
+
+    }
+
+    if (!charTable)
+    {
+        charTable = new QTableWidget(parent);
+        formatHexTable(charTable);
+        charTable->setStyleSheet("QTableView { padding: 0; spacing: 0; }");
+
+        QFont font;
+        font.setPointSize(10);
+        charTable->setFont(font);
+        charTable->setRowCount(numLines);
+        charTable->setColumnCount(16);
+
+        offsetHeaders << "0" << "1" << "2" << "3" << "4" << "5" << "6" << "7" << "8" << "9" << "A" << "B" << "C" << "D" << "E" << "F";
+        charTable->setHorizontalHeaderLabels(offsetHeaders);
+
+        // Set column width
+        for (int col = 0; col < 16; ++col) {
+            charTable->setColumnWidth(col, columnWidth);
+        }
+
     }
 
     updateHexViewer(hex_offset);
+    updateCharTable(hex_offset);
 }
 
 unsigned int GuiPE::RvaToOffset(unsigned int rva)
@@ -560,7 +639,7 @@ void GuiPE::handleImportSelection()
 
     if (selectedRow >= 0 && selectedRow < ImportsTable->rowCount()) {
         unsigned int ilt_address = RvaToOffset(import_table[selectedRow].misc.OriginalFirstThunk);
-        entry_counter = 0;
+        import_entry_counter = 0;
 
         DWORD original_first_thunk;
         DWORD original_first_thunk_rva = import_table[selectedRow].misc.OriginalFirstThunk;
@@ -572,7 +651,7 @@ void GuiPE::handleImportSelection()
         file.read(reinterpret_cast<char*>(&original_first_thunk), sizeof(DWORD));
 
         while (true) {
-            file.seekg((unsigned int)(ilt_address + (entry_counter * sizeof(QWORD))), std::ios::beg);
+            file.seekg((unsigned int)(ilt_address + (import_entry_counter * sizeof(QWORD))), std::ios::beg);
             file.read(std::bit_cast<char*>(&ilt_entry), sizeof(ilt_entry));
 
             BYTE flag = ilt_entry.OrdinalNameFlag;
@@ -608,12 +687,12 @@ void GuiPE::handleImportSelection()
                 ImportEntriesTable->setItem(rowCount, 1, new QTableWidgetItem(QString::number(ordinal, 16).toUpper()));
                 ImportEntriesTable->setItem(rowCount, 2, new QTableWidgetItem(""));
             }
-            entry_counter++;
+            import_entry_counter++;
         }
     }
 
     QString importName = ImportsTable->item(selectedRow, 1)->text();
-    QString label = importName + " [" + QString::number(entry_counter) + " entries]";
+    QString label = importName + " [" + QString::number(import_entry_counter) + " entries]";
     importsCountLabel->setText(label);
 }
 

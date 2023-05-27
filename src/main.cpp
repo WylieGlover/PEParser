@@ -17,12 +17,25 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     main_window.setWindowTitle("PE64 Parser v1.2");
     main_window.setWindowIcon(windowIcon);
 
-    auto * centralWidget = new QWidget(&main_window);
-    auto * centralLayout = new QVBoxLayout(centralWidget);
+    QWidget* centralWidget = new QWidget(&main_window);
+    QVBoxLayout* centralLayout = new QVBoxLayout(centralWidget);
 
-    file.createHexByteViewer(centralWidget, file_path, 32, 0);
-    centralLayout->addWidget(centralWidget->findChild<QTableWidget*>());
-    centralLayout->addWidget(file.getTabs());
+    // Create the top layout for the hex viewer and char table viewer
+    QHBoxLayout* topLayout = new QHBoxLayout();
+    centralLayout->addLayout(topLayout);
+
+    file.createHexByteViewer(nullptr, file_path, 32, 0);
+    QTableWidget* hexViewerTable = file.hexViewer;
+    QTableWidget* charViewerTable = file.charTable;
+
+    topLayout->addWidget(hexViewerTable);
+    topLayout->addWidget(charViewerTable);
+
+    // Create the bottom layout for the PE tables and other tables
+    QVBoxLayout* bottomLayout = new QVBoxLayout();
+    centralLayout->addLayout(bottomLayout);
+
+    bottomLayout->addWidget(file.getTabs());
 
     main_window.setCentralWidget(centralWidget);
     main_window.show();
