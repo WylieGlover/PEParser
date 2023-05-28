@@ -2,6 +2,7 @@
 
 #include <QApplication>
 #include <QMainWindow>
+#include <QScrollBar>
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
 {
@@ -17,11 +18,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     main_window.setWindowTitle("PE64 Parser v1.2");
     main_window.setWindowIcon(windowIcon);
 
-    QWidget* centralWidget = new QWidget(&main_window);
-    QVBoxLayout* centralLayout = new QVBoxLayout(centralWidget);
+    auto * centralWidget = new QWidget(&main_window);
+    auto * centralLayout = new QVBoxLayout(centralWidget);
 
     // Create the top layout for the hex viewer and char table viewer
-    QHBoxLayout* topLayout = new QHBoxLayout();
+    auto * topLayout = new QHBoxLayout();
     centralLayout->addLayout(topLayout);
 
     file.createHexByteViewer(nullptr, file_path, 32, 0);
@@ -31,8 +32,11 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     topLayout->addWidget(hexViewerTable);
     topLayout->addWidget(charViewerTable);
 
+    QObject::connect(hexViewerTable->verticalScrollBar(), &QScrollBar::valueChanged, charViewerTable->verticalScrollBar(), &QScrollBar::setValue);
+    QObject::connect(charViewerTable->verticalScrollBar(), &QScrollBar::valueChanged, hexViewerTable->verticalScrollBar(), &QScrollBar::setValue);
+
     // Create the bottom layout for the PE tables and other tables
-    QVBoxLayout* bottomLayout = new QVBoxLayout();
+    auto * bottomLayout = new QVBoxLayout();
     centralLayout->addLayout(bottomLayout);
 
     bottomLayout->addWidget(file.getTabs());

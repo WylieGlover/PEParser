@@ -157,23 +157,34 @@ void GuiPE::formatHexTable(QTableWidget* table)
     table->horizontalHeader()->setSectionsClickable(false);
     table->setShowGrid(false);
 
-    table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-
     table->horizontalHeader()->setContentsMargins(QMargins(0, 0, 0, 0));
     table->verticalHeader()->setContentsMargins(QMargins(0, 0, 0, 0));
-    table->horizontalHeader()->setMinimumSectionSize(10);
-    table->verticalHeader()->setMinimumSectionSize(18);
+    table->horizontalHeader()->setMinimumSectionSize(1);
+    table->verticalHeader()->setMinimumSectionSize(1);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     table->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     table->verticalHeader()->setSectionsClickable(true);
+    table->verticalHeader()->setDefaultAlignment(Qt::AlignCenter);
 
+    QFont vertical_font = table->verticalHeader()->font();
+    vertical_font.setBold(true);
+    vertical_font.setPointSize(8);
+    table->verticalHeader()->setFont(vertical_font);
 
+    QFont horizontal_font = table->horizontalHeader()->font();
+    horizontal_font.setBold(true);
+    horizontal_font.setPointSize(8);
+    table->horizontalHeader()->setFont(horizontal_font);
+
+    QPalette palette = table->palette();
+    palette.setBrush(QPalette::Base, QColor(231,231,247,255));
+    table->setPalette(palette);
 }
 
 void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, int numLines, int hex_offset)
 {
     QStringList offsetHeaders;
-    const int columnWidth = 150; // Adjust this value as needed
+    const int columnWidth = 150;
 
     if (!hexViewer)
     {
@@ -182,7 +193,7 @@ void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, in
         hexViewer->setStyleSheet("QTableView { padding: 0; spacing: 0; }");
 
         QFont font;
-        font.setPointSize(10);
+        font.setPointSize(8);
         hexViewer->setFont(font);
         hexViewer->setRowCount(numLines);
         hexViewer->setColumnCount(16);
@@ -194,7 +205,7 @@ void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, in
         for (int col = 0; col < 16; ++col) {
             hexViewer->setColumnWidth(col, columnWidth);
         }
-
+        hexViewer->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     }
 
     if (!charTable)
@@ -204,7 +215,7 @@ void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, in
         charTable->setStyleSheet("QTableView { padding: 0; spacing: 0; }");
 
         QFont font;
-        font.setPointSize(10);
+        font.setPointSize(8);
         charTable->setFont(font);
         charTable->setRowCount(numLines);
         charTable->setColumnCount(16);
@@ -216,8 +227,8 @@ void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, in
         for (int col = 0; col < 16; ++col) {
             charTable->setColumnWidth(col, columnWidth);
         }
-
     }
+
 
     updateHexViewer(hex_offset);
     updateCharTable(hex_offset);

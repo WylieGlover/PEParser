@@ -13,6 +13,7 @@
 #include "QLabel"
 #include "QScrollArea"
 #include "QFontMetrics"
+#include "QStyledItemDelegate"
 
 class GuiPE : public QObject
 {
