@@ -67,24 +67,24 @@ class GuiPE : public QObject
         void GUITLS();
 
         static void formatTable(QTableWidget * table);
-        static void formatHexTable(QTableWidget* table);
+        static void formatHexAndCharViewer(QTableWidget* table);
 
         unsigned int RvaToOffset(unsigned int rva);
 
-        void connectTablesToHexViewer() const;
+        void connectTablesToHexAndCharViewer() const;
         void connectTableToOffsetCellClicked(QTableWidget * table) const;
         void updateHexViewer(int offset);
-        void updateCharTable(int char_offset);
+        void updateCharViewer(int char_offset);
         void onOffsetCellClicked(int row, int column);
 
         void handleImportSelection();
         void handleBaseRelocationSelection();
     public:
         void Load(const std::string &path);
-        void createHexByteViewer(QWidget * parent, const std::string& filePath, int numLines, int offset);
+        void createHexAndCharByteViewer(QWidget * parent, const std::string& filePath, int numLines, int offset);
 
         QTableWidget * hexViewer = nullptr;
-        QTableWidget * charTable = nullptr;
+        QTableWidget * charViewer = nullptr;
         QTabWidget * getTabs();
 };
 

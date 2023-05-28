@@ -25,9 +25,9 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     auto * topLayout = new QHBoxLayout();
     centralLayout->addLayout(topLayout);
 
-    file.createHexByteViewer(nullptr, file_path, 32, 0);
+    file.createHexAndCharByteViewer(nullptr, file_path, 32, 0);
     QTableWidget* hexViewerTable = file.hexViewer;
-    QTableWidget* charViewerTable = file.charTable;
+    QTableWidget* charViewerTable = file.charViewer;
 
     topLayout->addWidget(hexViewerTable);
     topLayout->addWidget(charViewerTable);

@@ -10,7 +10,7 @@ QTabWidget * GuiPE::getTabs()
     return PETabs;
 }
 
-void GuiPE::connectTablesToHexViewer() const
+void GuiPE::connectTablesToHexAndCharViewer() const
 {
     connectTableToOffsetCellClicked(DosTable);
     connectTableToOffsetCellClicked(FileHeaderTable);
@@ -53,18 +53,18 @@ void GuiPE::formatTable(QTableWidget* table)
 }
 
 
-void GuiPE::updateCharTable(int char_offset)
+void GuiPE::updateCharViewer(int char_offset)
 {
-    if (!charTable) return;
+    if (!charViewer) return;
 
-    const int numRows = charTable->rowCount();
-    const int numCols = charTable->columnCount();
+    const int numRows = charViewer->rowCount();
+    const int numCols = charViewer->columnCount();
 
-    charTable->clearContents();
+    charViewer->clearContents();
 
     for (int row = 0; row < numRows; ++row) {
         int offset = char_offset + (row * 16);
-        charTable->setVerticalHeaderItem(row, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
+        charViewer->setVerticalHeaderItem(row, new QTableWidgetItem(QString::number(offset, 16).toUpper()));
     }
 
     file.seekg(char_offset);
@@ -89,7 +89,7 @@ void GuiPE::updateCharTable(int char_offset)
             auto * charItem = new QTableWidgetItem(charValue);
             charItem->setTextAlignment(Qt::AlignCenter);
 
-            charTable->setItem(row, col, charItem);
+            charViewer->setItem(row, col, charItem);
         }
     }
 }
@@ -145,14 +145,14 @@ void GuiPE::onOffsetCellClicked(int row, int column)
                 int offset = item->text().toInt(&ok, 16);
                 if (ok) {
                     updateHexViewer(offset);
-                    updateCharTable(offset);
+                    updateCharViewer(offset);
                 }
             }
         }
     }
 }
 
-void GuiPE::formatHexTable(QTableWidget* table)
+void GuiPE::formatHexAndCharViewer(QTableWidget* table)
 {
     table->horizontalHeader()->setSectionsClickable(false);
     table->setShowGrid(false);
@@ -181,7 +181,7 @@ void GuiPE::formatHexTable(QTableWidget* table)
     table->setPalette(palette);
 }
 
-void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, int numLines, int hex_offset)
+void GuiPE::createHexAndCharByteViewer(QWidget* parent, const std::string& filePath, int numLines, int hex_offset)
 {
     QStringList offsetHeaders;
     const int columnWidth = 150;
@@ -189,7 +189,7 @@ void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, in
     if (!hexViewer)
     {
         hexViewer = new QTableWidget(parent);
-        formatHexTable(hexViewer);
+        formatHexAndCharViewer(hexViewer);
         hexViewer->setStyleSheet("QTableView { padding: 0; spacing: 0; }");
 
         QFont font;
@@ -208,30 +208,30 @@ void GuiPE::createHexByteViewer(QWidget* parent, const std::string& filePath, in
         hexViewer->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     }
 
-    if (!charTable)
+    if (!charViewer)
     {
-        charTable = new QTableWidget(parent);
-        formatHexTable(charTable);
-        charTable->setStyleSheet("QTableView { padding: 0; spacing: 0; }");
+        charViewer = new QTableWidget(parent);
+        formatHexAndCharViewer(charViewer);
+        charViewer->setStyleSheet("QTableView { padding: 0; spacing: 0; }");
 
         QFont font;
         font.setPointSize(8);
-        charTable->setFont(font);
-        charTable->setRowCount(numLines);
-        charTable->setColumnCount(16);
+        charViewer->setFont(font);
+        charViewer->setRowCount(numLines);
+        charViewer->setColumnCount(16);
 
         offsetHeaders << "0" << "1" << "2" << "3" << "4" << "5" << "6" << "7" << "8" << "9" << "A" << "B" << "C" << "D" << "E" << "F";
-        charTable->setHorizontalHeaderLabels(offsetHeaders);
+        charViewer->setHorizontalHeaderLabels(offsetHeaders);
 
         // Set column width
         for (int col = 0; col < 16; ++col) {
-            charTable->setColumnWidth(col, columnWidth);
+            charViewer->setColumnWidth(col, columnWidth);
         }
     }
 
 
     updateHexViewer(hex_offset);
-    updateCharTable(hex_offset);
+    updateCharViewer(hex_offset);
 }
 
 unsigned int GuiPE::RvaToOffset(unsigned int rva)
@@ -1316,5 +1316,5 @@ void GuiPE::Load(const std::string& file_path)
     GUIBaseRelocations();
     GUITLS();
 
-    connectTablesToHexViewer();
+    connectTablesToHexAndCharViewer();
 }
