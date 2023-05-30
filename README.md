@@ -10,3 +10,4 @@ PE64 Parser is a program I created to parse the Dos Header, File Header, Optiona
 
 ## Contributing
 Pull requests are welcome! Please open an issue to discuss if you have any changes that are major to the parser.
+I appreciate any insight or advice as well!
