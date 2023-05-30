@@ -3,3 +3,5 @@
 PE64 Parser is a program I created to parse the Dos Header, File Header, Optional Headers, Sections Headers, Imports, Exceptions, Base Reloc. and TLS of the PE File format and GUI it.
 
 ** I plan to add future GUI support for the rest of the structures in the PE file format **
+
+![Alt text](C:\Users\FindW\Desktop\folder_icon.jpg?raw=true "Title")
